@@ -32,22 +32,24 @@ pub struct MoldUDP64 {
 
 impl MoldUDP64 {
     pub fn start(&self) -> io::Result<Receiver<PooledDatagram>> {
-        // --- Downstream multicast socket (recv-only) ---
         let mcast_socket = UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
             self.multicast_addr.port(),
         ))?;
         mcast_socket.join_multicast_v4(self.multicast_addr.ip(), &self.interface_addr)?;
+        let rereq_socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
 
-        // --- Re-request socket (shared unicast: all senders + the response receiver) ---
-        if self.rerequest_server_addrs.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "at least one re-request server address is required",
-            ));
-        }
-        let rereq_socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?);
+        self.start_with_sockets(mcast_socket, rereq_socket, &self.rerequest_server_addrs)
+    }
 
+    /// Test seam — accepts pre-bound sockets so tests can drive the client
+    /// over loopback unicast without needing multicast support.
+    pub(crate) fn start_with_sockets(
+        &self,
+        downstream: UdpSocket,
+        rereq: UdpSocket,
+        servers: &[SocketAddr],
+    ) -> io::Result<Receiver<PooledDatagram>> {
         // --- Buffer pool ---
         let pool: Pool = Arc::new(ArrayQueue::new(POOL_SIZE));
         for _ in 0..POOL_SIZE {
@@ -65,15 +67,16 @@ impl MoldUDP64 {
             let mut session = self.expected_session_ident.clone();
             let mut seq = self.expected_seq_num;
             spawn(move || {
-                multicast_recv_loop(mcast_socket, pool, data_tx, req_tx, &mut session, &mut seq);
+                multicast_recv_loop(downstream, pool, data_tx, req_tx, &mut session, &mut seq);
             });
         }
 
+        let rereq_socket = Arc::new(rereq);
         // Threads — one re-request sender per server, all draining the same channel.
         // crossbeam channels are MPMC, so whichever sender is idle grabs the next
         // Request. This spreads load across servers and tolerates a slow peer
         // without head-of-line blocking.
-        for &server_addr in &self.rerequest_server_addrs {
+        for &server_addr in servers {
             let socket = Arc::clone(&rereq_socket);
             let req_rx = req_rx.clone();
             spawn(move || {
