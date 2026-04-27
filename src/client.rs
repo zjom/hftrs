@@ -8,7 +8,7 @@ use std::{
 };
 use tracing::{error, warn};
 
-use crate::packet::{Packet, Request};
+use crate::packet::Packet;
 use bon::Builder;
 
 /// MoldUDP64 client.
@@ -118,7 +118,7 @@ impl MoldUDP64 {
 
         // --- Channels ---
         let (data_tx, data_rx) = channel::bounded::<Datagram>(POOL_SIZE);
-        let (req_tx, req_rx) = channel::bounded::<Request>(POOL_SIZE);
+        let (req_tx, req_rx) = channel::bounded::<RetransmissionRequest>(POOL_SIZE);
 
         // Thread — multicast receiver, drives gap detection.
         {
@@ -143,11 +143,13 @@ impl MoldUDP64 {
             let req_tx = req_tx.clone();
             let max_rerequest_retries = self.max_rerequest_retries;
             spawn(move || {
+                let mut buf = [0u8; 20];
                 let mut n_failures = 0;
                 while let Ok(req) = req_rx.recv()
                     && n_failures < max_rerequest_retries
                 {
-                    if let Err(e) = socket.send_to(req.as_bytes(), &server_addr) {
+                    req.serialize_into(&mut buf);
+                    if let Err(e) = socket.send_to(buf.as_slice(), &server_addr) {
                         warn!("failed to send re-request to {server_addr}: {e}");
                         n_failures += 1;
                         if req_tx.try_send(req).is_err() {
@@ -177,7 +179,7 @@ fn multicast_recv_loop(
     socket: UdpSocket,
     pool: Pool,
     data_tx: Sender<Datagram>,
-    req_tx: Sender<Request>,
+    req_tx: Sender<RetransmissionRequest>,
     expected_session_ident: &mut Option<String>,
     expected_seq_num: &mut Option<u64>,
 ) {
@@ -212,7 +214,11 @@ fn multicast_recv_loop(
             if session_matches && packet.seq_num() > exp_seq {
                 let gap = packet.seq_num() - exp_seq;
                 let msg_count = gap.min(u16::MAX as u64) as u16;
-                let req = Request::new(exp_session, exp_seq, msg_count);
+                let req = RetransmissionRequest {
+                    session: *packet.session_ident_raw(),
+                    seq_num: exp_seq,
+                    msg_count: msg_count,
+                };
                 if req_tx.try_send(req).is_err() {
                     error!("re-request queue full or disconnected");
                 }
