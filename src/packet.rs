@@ -4,6 +4,23 @@
 /// The Message Blocks carry the actual data of the stream.
 pub struct Packet<'a>(pub &'a [u8]);
 
+pub enum PacketKind {
+    Standard,
+    Heartbeat,
+    EndOfSession,
+}
+
+/// When the current session is complete, Downstream Packets are sent with a Message Count of 0xFFFF(hex,
+/// or 65535 in decimal) for a short while in place of Heartbeats. These Downstream Packets contain the next
+/// expected Sequence Number, just like Heartbeats. While the End of Session messages persist, re-requests may
+/// be made on the current session. This is the last chance to ensure that all messages have been received.
+pub const END_OF_SESSION_IDENT: u16 = u16::MAX;
+
+/// Heartbeats are sent periodically by the server so receivers can sense packet loss even during times of low
+/// traffic. Typically, these packets are transmitted once per second and contain the next expected Sequence
+/// Number. A Heartbeat packet is a MoldUDP64 packet with a Message Count of zero.
+pub const HEARTBEAT_IDENT: u16 = 0;
+
 /// A message is an atomic piece of information carried by the MoldUDP64 protocol.
 /// MoldUDP64 can theoretically handle individual messages from zero bytes up
 /// to 64KB in length although individual messages should be kept small enough so
@@ -61,7 +78,7 @@ impl<'a> Packet<'a> {
     #[inline]
     pub const fn session_status(&self) -> SessionStatus {
         match self.msg_count() {
-            u16::MAX => SessionStatus::Inactive,
+            END_OF_SESSION_IDENT => SessionStatus::Inactive,
             _ => SessionStatus::Active,
         }
     }
@@ -86,6 +103,16 @@ impl<'a> Packet<'a> {
         self.0.split_at(20).1
     }
 
+    #[inline]
+    pub const fn packet_kind(&self) -> PacketKind {
+        use PacketKind as PK;
+        match self.msg_count() {
+            HEARTBEAT_IDENT => PK::Heartbeat,
+            END_OF_SESSION_IDENT => PK::EndOfSession,
+            _ => PK::Standard,
+        }
+    }
+
     /// Returns a 0 allocation iterator that loops through messages in this packet.
     #[inline]
     pub const fn iter(&self) -> Messages<'a> {
@@ -93,7 +120,7 @@ impl<'a> Packet<'a> {
             bytes: self.messages(),
             // 0xFFFF means end-of-session, no real messages follow
             remaining: match self.msg_count() {
-                u16::MAX => 0,
+                END_OF_SESSION_IDENT | HEARTBEAT_IDENT => 0,
                 n => n,
             },
         }
