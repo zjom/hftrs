@@ -73,8 +73,8 @@ impl<'a> Packet<'a> {
 
     #[inline]
     /// Raw bytes of session identifier. See [`Self::session_ident`] for more information.
-    pub const fn session_ident_raw(&self) -> &'a [u8] {
-        self.0.split_at(10).0
+    pub fn session_ident_raw(&self) -> &'a [u8; 10] {
+        self.0.split_at(10).0.try_into().unwrap()
     }
 
     /// When the current session is complete, Downstream Packets are sent with a Message Count of 0xFFFF
@@ -183,48 +183,3 @@ impl<'a> Iterator for Messages<'a> {
 }
 
 impl<'a> ExactSizeIterator for Messages<'a> {}
-
-/// The Request Packet is sent to request the retransmission of a particular message or group of messages. The
-/// request packet is sent to a Re-request server. A receiver may need to send this request when it detects a
-/// sequence number gap in received messages. The response to a valid Request Packet is a standard Downstream
-/// Packet unicast back to the source of the retransmission request. This allows downstream MoldUDP64 users to
-/// read the retransmitted Downstream Packet in their multicast processing socket if the request was made from
-/// that socket (in other words, the client need only have one socket open to listen to the multicast and to process
-/// retransmissions, even though the retransmissions are not multicast).
-
-pub(crate) struct Request([u8; 20]);
-impl Request {
-    /// Creates a new rerequest request.
-    /// `session_ident.len()` should be  <= 10.
-    /// If greater, it is cut off. If less, it is padded.
-    #[inline]
-    pub(crate) fn new(session_ident: &str, seq_num: u64, msg_count: u16) -> Request {
-        let mut buf = [0u8; 20];
-
-        let bytes = session_ident.as_bytes();
-        let end = Self::SESSION_OFFSET + std::cmp::min(session_ident.len(), Self::SESSION_LENGTH);
-        buf[Self::SESSION_OFFSET..end].copy_from_slice(bytes);
-
-        let end = Self::SEQ_OFFSET + Self::SEQ_LENGTH;
-        buf[Self::SEQ_OFFSET..end].copy_from_slice(&seq_num.to_be_bytes());
-
-        let end = Self::MSG_COUNT_OFFSET + Self::MSG_COUNT_LENGTH;
-        buf[Self::MSG_COUNT_OFFSET..end].copy_from_slice(&msg_count.to_be_bytes());
-
-        Request(buf)
-    }
-
-    #[inline]
-    pub const fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    const SESSION_OFFSET: usize = 0;
-    const SESSION_LENGTH: usize = 10;
-
-    const SEQ_OFFSET: usize = 10;
-    const SEQ_LENGTH: usize = 8;
-
-    const MSG_COUNT_OFFSET: usize = 18;
-    const MSG_COUNT_LENGTH: usize = 2;
-}

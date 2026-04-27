@@ -306,3 +306,38 @@ impl Drop for Datagram {
         }
     }
 }
+
+/// The Request Packet is sent to request the retransmission of a particular message or group of messages. The
+/// request packet is sent to a Re-request server. A receiver may need to send this request when it detects a
+/// sequence number gap in received messages. The response to a valid Request Packet is a standard Downstream
+/// Packet unicast back to the source of the retransmission request. This allows downstream MoldUDP64 users to
+/// read the retransmitted Downstream Packet in their multicast processing socket if the request was made from
+/// that socket (in other words, the client need only have one socket open to listen to the multicast and to process
+/// retransmissions, even though the retransmissions are not multicast).
+
+struct RetransmissionRequest {
+    session: [u8; 10],
+    seq_num: u64,
+    msg_count: u16,
+}
+impl RetransmissionRequest {
+    #[inline]
+    fn serialize_into(&self, buf: &mut [u8; 20]) {
+        buf[Self::SESSION_OFFSET..Self::SESSION_LENGTH].copy_from_slice(&self.session);
+
+        let end = Self::SEQ_OFFSET + Self::SEQ_LENGTH;
+        buf[Self::SEQ_OFFSET..end].copy_from_slice(&self.seq_num.to_be_bytes());
+
+        let end = Self::MSG_COUNT_OFFSET + Self::MSG_COUNT_LENGTH;
+        buf[Self::MSG_COUNT_OFFSET..end].copy_from_slice(&self.msg_count.to_be_bytes());
+    }
+
+    const SESSION_OFFSET: usize = 0;
+    const SESSION_LENGTH: usize = 10;
+
+    const SEQ_OFFSET: usize = 10;
+    const SEQ_LENGTH: usize = 8;
+
+    const MSG_COUNT_OFFSET: usize = 18;
+    const MSG_COUNT_LENGTH: usize = 2;
+}
