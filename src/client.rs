@@ -22,6 +22,7 @@ use bon::Builder;
 ///
 /// ```no_run
 /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+/// use moldudp::{MoldUDP64,Downstream};
 ///
 /// let rx = MoldUDP64::builder()
 ///     // Multicast group + port carrying the live downstream feed.
@@ -78,7 +79,7 @@ pub struct MoldUDP64 {
 
 impl MoldUDP64 {
     #[must_use]
-    pub fn start(&self) -> io::Result<Receiver<PooledDatagram>> {
+    pub fn start(&self) -> io::Result<Receiver<Datagram>> {
         let mcast_socket = UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
             self.multicast_addr.port(),
@@ -96,7 +97,7 @@ impl MoldUDP64 {
         downstream: UdpSocket,
         rereq: UdpSocket,
         servers: &[SocketAddr],
-    ) -> io::Result<Receiver<PooledDatagram>> {
+    ) -> io::Result<Receiver<Datagram>> {
         // --- Buffer pool ---
         let pool: Pool = Arc::new(ArrayQueue::new(POOL_SIZE));
         for _ in 0..POOL_SIZE {
@@ -104,7 +105,7 @@ impl MoldUDP64 {
         }
 
         // --- Channels ---
-        let (data_tx, data_rx) = channel::bounded::<PooledDatagram>(POOL_SIZE);
+        let (data_tx, data_rx) = channel::bounded::<Datagram>(POOL_SIZE);
         let (req_tx, req_rx) = channel::bounded::<Request>(POOL_SIZE);
 
         // Thread — multicast receiver, drives gap detection.
@@ -156,7 +157,7 @@ impl MoldUDP64 {
 fn multicast_recv_loop(
     socket: UdpSocket,
     pool: Pool,
-    data_tx: Sender<PooledDatagram>,
+    data_tx: Sender<Datagram>,
     req_tx: Sender<Request>,
     expected_session_ident: &mut Option<String>,
     expected_seq_num: &mut Option<u64>,
@@ -208,7 +209,7 @@ fn multicast_recv_loop(
     }
 }
 
-fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<PooledDatagram>) {
+fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Datagram>) {
     loop {
         let mut buf = pool
             .pop()
@@ -237,14 +238,8 @@ fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Poole
 }
 
 #[inline]
-fn forward(
-    data_tx: &Sender<PooledDatagram>,
-    pool: &Pool,
-    buf: Buffer,
-    len: usize,
-    src: &'static str,
-) {
-    let dgram = PooledDatagram {
+fn forward(data_tx: &Sender<Datagram>, pool: &Pool, buf: Buffer, len: usize, src: &'static str) {
+    let dgram = Datagram {
         buf: Some(buf),
         len,
         pool: Arc::clone(pool),
@@ -266,20 +261,20 @@ const POOL_SIZE: usize = 1024;
 type Buffer = Box<[u8]>;
 type Pool = Arc<ArrayQueue<Buffer>>;
 
-pub struct PooledDatagram {
+pub struct Datagram {
     buf: Option<Buffer>,
     len: usize,
     pool: Pool,
 }
 
-impl PooledDatagram {
+impl Datagram {
     #[inline]
     pub fn bytes(&self) -> &[u8] {
         &self.buf.as_ref().unwrap()[..self.len]
     }
 }
 
-impl Drop for PooledDatagram {
+impl Drop for Datagram {
     fn drop(&mut self) {
         if let Some(buf) = self.buf.take() {
             let _ = self.pool.push(buf);
