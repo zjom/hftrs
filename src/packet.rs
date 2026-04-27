@@ -71,6 +71,12 @@ impl<'a> Packet<'a> {
         }
     }
 
+    #[inline]
+    /// Raw bytes of session identifier. See [`Self::session_ident`] for more information.
+    pub const fn session_ident_raw(&self) -> &'a [u8] {
+        self.0.split_at(10).0
+    }
+
     /// When the current session is complete, Downstream Packets are sent with a Message Count of 0xFFFF
     /// (hex,or 65535 in decimal) for a short while in place of Heartbeats. These Downstream Packets contain the next
     /// expected Sequence Number, just like Heartbeats. While the End of Session messages persist, re-requests may
