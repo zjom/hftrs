@@ -185,6 +185,10 @@ pub enum MessageKind {
     DirectListingwithCapitalRaisePriceDiscoveryMessage,
 }
 
+/// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
+/// fixed point format, where the precision defines the number of decimal places. For example, a field flagged as Price
+/// (4) has an implied 4 decimal places. The maximum value of price (4) in TotalView ITCH is 200,000.0000 (decimal,
+/// 77359400 hex).
 pub struct Price4<'a>(&'a [u8]);
 impl Price4<'_> {
     pub fn into_u32(&self) -> u32 {
@@ -202,6 +206,8 @@ impl<'a> From<&'a [u8]> for Price4<'a> {
     }
 }
 
+/// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
+/// fixed point format, where the precision defines the number of decimal places.
 pub struct Price8<'a>(&'a [u8]);
 impl Price8<'_> {
     pub fn into_u64(&self) -> u64 {
