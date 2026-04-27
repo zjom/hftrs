@@ -213,7 +213,13 @@ fn multicast_recv_loop(
 
         // Advance expectation to the seq right after this packet's last msg.
         *expected_seq_num = Some(packet.seq_num() + packet.msg_count() as u64);
-        *expected_session_ident = Some(packet.session_ident().to_string());
+        match expected_session_ident {
+            Some(s) => {
+                s.clear();
+                s.push_str(packet.session_ident());
+            }
+            None => *expected_session_ident = Some(packet.session_ident().to_owned()),
+        }
 
         forward(&data_tx, &pool, buf, n, "multicast");
     }
