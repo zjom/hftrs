@@ -18,10 +18,10 @@ pub enum SessionStatus {
     Inactive,
 }
 impl<'a> Downstream<'a> {
-    pub const fn new(bytes: &'a [u8]) -> Downstream<'a> {
-        debug_assert!(bytes.len() >= Self::MIN_PACKET_LEN);
-        Downstream(bytes)
-    }
+    /// Wraps the bytes of a downstream packet, providing utilities to inspect the data.
+    /// Does not allocate anything.
+    /// Bytes must have length of at least 20.
+    ///
     /// A packet is composed of header block + optional messages block.
     /// Header:
     /// - Session: `[0..10]`
@@ -29,7 +29,12 @@ impl<'a> Downstream<'a> {
     /// - Message Count: `[18..20]`
     /// Messages (Optional):
     /// - Message: 2-byte big-endian length followed by `length` bytes of payload.
-    pub const MIN_PACKET_LEN: usize = 20;
+    pub const fn new(bytes: &'a [u8]) -> Downstream<'a> {
+        debug_assert!(bytes.len() >= Self::MIN_PACKET_LEN);
+        Downstream(bytes)
+    }
+
+    pub(crate) const MIN_PACKET_LEN: usize = 20;
 
     /// A Session is a sequence of one or more messages.
     /// While a single session can last indefinitely, typically the application will
