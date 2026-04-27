@@ -24,7 +24,6 @@ pub struct MoldUDP64 {
     pub interface_addr: Ipv4Addr,
     /// Re-request server(s). Requests are sent to the first entry; the
     /// retransmitted Downstream packets come back on the same unicast socket.
-    /// TODO: Extend to round-robin / failover
     pub rerequest_server_addrs: Vec<SocketAddr>,
     pub expected_session_ident: Option<String>,
     pub expected_seq_num: Option<u64>,
