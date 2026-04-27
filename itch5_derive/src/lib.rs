@@ -134,9 +134,18 @@ fn generate_accessor(name: &Ident, ty: &Type, offset: usize, len: usize) -> Toke
                 u64::from_be_bytes(b)
             }
         },
-        // Default: return the raw slice (good for Alpha fields, stock symbols, etc.)
+        "&[u8]" | "&'a[u8]" => quote! {
+            pub fn #name(&self) -> &'a [u8] { &self.0[#offset..#end] }
+        },
+        _ if len == 1 => quote! {
+            pub fn #name(&self) -> #ty {
+                <#ty as ::core::convert::From<u8>>::from(self.0[#offset])
+            }
+        },
         _ => quote! {
-            pub fn #name(&self) -> &[u8] { &self.0[#offset..#end] }
+            pub fn #name(&self) -> #ty {
+                <#ty as ::core::convert::From<&[u8]>>::from(&self.0[#offset..#end])
+            }
         },
     }
 }
