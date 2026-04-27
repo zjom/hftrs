@@ -79,6 +79,9 @@ pub struct MoldUDP64 {
     /// First sequence number the consumer cares about. Gaps before this
     /// point are not re-requested.
     expected_seq_num: Option<u64>,
+    /// Max number of failures tolerated for a re-request server before shutting it down.
+    #[builder(default = 100)]
+    max_rerequest_retries: u64,
 }
 
 impl MoldUDP64 {
@@ -124,6 +127,7 @@ impl MoldUDP64 {
             let data_tx = data_tx.clone();
             let mut session = self.expected_session_ident.clone();
             let mut seq = self.expected_seq_num;
+            let req_tx = req_tx.clone();
             spawn(move || {
                 multicast_recv_loop(downstream, pool, data_tx, req_tx, &mut session, &mut seq);
             });
@@ -137,13 +141,19 @@ impl MoldUDP64 {
         for &server_addr in servers {
             let socket = Arc::clone(&rereq_socket);
             let req_rx = req_rx.clone();
+            let req_tx = req_tx.clone();
+            let max_rerequest_retries = self.max_rerequest_retries;
             spawn(move || {
-                while let Ok(req) = req_rx.recv() {
+                let mut n_failures = 0;
+                while let Ok(req) = req_rx.recv()
+                    && n_failures < max_rerequest_retries
+                {
                     if let Err(e) = socket.send_to(req.as_bytes(), &server_addr) {
-                        error!("failed to send re-request to {server_addr}: {e}");
-                        // Optional: requeue with `req_tx.try_send(req)` so another
-                        // server picks it up. Be careful about infinite loops if
-                        // every server is down.
+                        warn!("failed to send re-request to {server_addr}: {e}");
+                        n_failures += 1;
+                        if req_tx.try_send(req).is_err() {
+                            error!("re-request queue full or disconnected");
+                        }
                     }
                 }
             });
