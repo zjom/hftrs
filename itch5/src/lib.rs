@@ -1,5 +1,3 @@
-use std::array::TryFromSliceError;
-
 use itch5_derive::itch_message;
 
 pub enum MessageKind {
