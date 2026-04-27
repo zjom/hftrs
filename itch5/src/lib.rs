@@ -778,13 +778,13 @@ pub struct MwcbDeclineLevel {
     timestamp: u64,
     /// Denotes the MWCB Level 1 Value.
     #[field(offset = 11, len = 8)]
-    level_1: u64,
+    level_1: Price8,
     /// Denotes the MWCB Level 2 Value.
     #[field(offset = 19, len = 8)]
-    level_2: u64,
+    level_2: Price8,
     /// Denotes the MWCB Level 3 Value.
     #[field(offset = 27, len = 8)]
-    level_3: u64,
+    level_3: Price8,
 }
 
 /// Market-Wide Circuit Breaker Status message
@@ -852,7 +852,7 @@ pub struct IpoQuotingPeriodUpdate {
     /// Denotes the IPO Price to be used for intraday net change calculations.
     /// Prices are given in decimal format with 6 whole number places followed by 4 decimal digits.
     #[field(offset = 24, len = 4)]
-    ipo_price: u32,
+    ipo_price: Price4,
 }
 
 #[repr(u8)]
@@ -892,16 +892,16 @@ pub struct LuldAuctionCollar {
     stock: &[u8],
     /// Reference price used to set the Auction Collars
     #[field(offset = 19, len = 4)]
-    auction_collar_reference_price: u32,
+    auction_collar_reference_price: Price4,
     /// Indicates the price of the Upper Auction Collar Threshold
     #[field(offset = 23, len = 4)]
-    upper_auction_collar_price: u32,
+    upper_auction_collar_price: Price4,
     /// Indicates the price of the Lower Auction Collar Threshold
     #[field(offset = 27, len = 4)]
-    lower_auction_collar_price: u32,
+    lower_auction_collar_price: Price4,
     /// Indicates the number of the extensions to the Reopening Auction
     #[field(offset = 31, len = 4)]
-    auction_collar_extension: u32,
+    auction_collar_extension: Price4,
 }
 
 /// Operational Halt Message
@@ -1003,7 +1003,7 @@ pub struct AddOrderNoMpidAttribution {
     stock: &[u8],
     /// The display price of the new order. Refer to Data Types for field processing notes.
     #[field(offset = 32, len = 4)]
-    price: u32,
+    price: Price4,
 }
 
 #[repr(u8)]
@@ -1052,7 +1052,7 @@ pub struct AddOrderMpidAttribution {
     stock: &[u8],
     /// The display price of the new order. Refer to Data Types for field processing notes.
     #[field(offset = 32, len = 4)]
-    price: u32,
+    price: Price4,
     /// Nasdaq Market participant identifier associated with the entered order
     #[field(offset = 36, len = 4)]
     attribution: &[u8],
@@ -1121,7 +1121,7 @@ pub struct OrderExecutedWithPrice {
     printable: Printable,
     /// The Price at which the order execution occurred. Refer to Data Types for field processing notes
     #[field(offset = 32, len = 4)]
-    execution_price: u32,
+    execution_price: Price4,
 }
 
 #[repr(u8)]
@@ -1208,7 +1208,7 @@ pub struct OrderReplace {
     /// The new display price for the order
     /// Please refer to Data Types for field processing notes
     #[field(offset = 31, len = 4)]
-    price: u32,
+    price: Price4,
 }
 
 /// Trade Message
@@ -1243,7 +1243,7 @@ pub struct Trade {
     /// The match price of the order
     /// Please refer to Data Types for field processing notes
     #[field(offset = 32, len = 4)]
-    price: u32,
+    price: Price4,
     /// The Nasdaq generated session unique Match Number for this trade
     /// The Match Number is referenced in the Trade Break Message
     #[field(offset = 36, len = 8)]
@@ -1277,7 +1277,7 @@ pub struct CrossTrade {
     stock: &[u8],
     /// The price at which the cross occurred. Refer to Data Types for field processing notes.
     #[field(offset = 27, len = 4)]
-    cross_price: u32,
+    cross_price: Price4,
     /// The Nasdaq generated day-unique Match Number of this execution.
     #[field(offset = 31, len = 8)]
     match_number: u64,
@@ -1341,13 +1341,13 @@ pub struct NetOrderImbalanceIndicator {
     stock: &[u8],
     /// A hypothetical auction-clearing price for cross orders only. Refer to Data Types for field processing notes.
     #[field(offset = 36, len = 4)]
-    far_price: u32,
+    far_price: Price4,
     /// A hypothetical auction-clearing price for cross orders as well as continuous orders. Refer to Data Types for field processing notes.
     #[field(offset = 40, len = 4)]
-    near_price: u32,
+    near_price: Price4,
     /// The price at which the NOII shares are being calculated. Refer to Data Types for field processing notes.
     #[field(offset = 44, len = 4)]
-    current_reference_price: u32,
+    current_reference_price: Price4,
     /// The type of Nasdaq cross for which the NOII message is being generated
     #[field(offset = 48, len = 1)]
     cross_type: CrossType,
@@ -1532,22 +1532,22 @@ pub struct DirectListingWithCapitalRaise {
     open_eligibility_status: OpenEligibilityStatus,
     /// 20% below Registration Statement Lower Price
     #[field(offset = 20, len = 4)]
-    minimum_allowable_price: u32,
+    minimum_allowable_price: Price4,
     /// 80% above Registration Statement Highest Price
     #[field(offset = 24, len = 4)]
-    maximum_allowable_price: u32,
+    maximum_allowable_price: Price4,
     /// The current reference price when the DLCR volatility test has successfully passed
     #[field(offset = 28, len = 4)]
-    near_execution_price: u32,
+    near_execution_price: Price4,
     /// The time at which the near execution price was set
     #[field(offset = 32, len = 8)]
     near_execution_time: u64,
     /// Indicates the price of the Lower Auction Collar Threshold (10% below the Near Execution Price)
     #[field(offset = 40, len = 4)]
-    lower_price_range_collar: u32,
+    lower_price_range_collar: Price4,
     /// Indicates the price of the Upper Auction Collar Threshold (10% above the Near Execution Price)
     #[field(offset = 44, len = 4)]
-    upper_price_range_collar: u32,
+    upper_price_range_collar: Price4,
 }
 
 #[repr(u8)]
