@@ -80,7 +80,7 @@ pub struct MoldUDP64 {
     expected_seq_num: Option<u64>,
     /// Max number of failures tolerated for a re-request server before shutting it down.
     #[builder(default = 100)]
-    max_rerequest_retries: u64,
+    max_rerequest_retries: u8,
 }
 
 impl MoldUDP64 {
@@ -144,15 +144,13 @@ impl MoldUDP64 {
             let max_rerequest_retries = self.max_rerequest_retries;
             spawn(move || {
                 let mut buf = [0u8; 20];
-                let mut n_failures = 0;
-                while let Ok(req) = req_rx.recv()
-                    && n_failures < max_rerequest_retries
+                while let Ok((req, attempts)) = req_rx.recv()
+                    && attempts < max_rerequest_retries
                 {
                     req.serialize_into(&mut buf);
                     if let Err(e) = socket.send_to(buf.as_slice(), &server_addr) {
                         warn!("failed to send re-request to {server_addr}: {e}");
-                        n_failures += 1;
-                        if req_tx.try_send(req).is_err() {
+                        if req_tx.try_send((req, attempts + 1)).is_err() {
                             error!("re-request queue full or disconnected");
                         }
                     }
@@ -214,12 +212,12 @@ fn multicast_recv_loop(
             if session_matches && packet.seq_num() > exp_seq {
                 let gap = packet.seq_num() - exp_seq;
                 let msg_count = gap.min(u16::MAX as u64) as u16;
-                let req = RetransmissionRequest {
+                let req = RetransmissionPacket {
                     session: *packet.session_ident_raw(),
                     seq_num: exp_seq,
                     msg_count: msg_count,
                 };
-                if req_tx.try_send(req).is_err() {
+                if req_tx.try_send((req, 0)).is_err() {
                     error!("re-request queue full or disconnected");
                 }
             }
@@ -313,6 +311,8 @@ impl Drop for Datagram {
     }
 }
 
+type RetransmissionRequest = (RetransmissionPacket, u8);
+
 /// The Request Packet is sent to request the retransmission of a particular message or group of messages. The
 /// request packet is sent to a Re-request server. A receiver may need to send this request when it detects a
 /// sequence number gap in received messages. The response to a valid Request Packet is a standard Downstream
@@ -321,12 +321,12 @@ impl Drop for Datagram {
 /// that socket (in other words, the client need only have one socket open to listen to the multicast and to process
 /// retransmissions, even though the retransmissions are not multicast).
 
-struct RetransmissionRequest {
+struct RetransmissionPacket {
     session: [u8; 10],
     seq_num: u64,
     msg_count: u16,
 }
-impl RetransmissionRequest {
+impl RetransmissionPacket {
     #[inline]
     fn serialize_into(&self, buf: &mut [u8; 20]) {
         buf[Self::SESSION_OFFSET..Self::SESSION_LENGTH].copy_from_slice(&self.session);
