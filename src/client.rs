@@ -54,7 +54,6 @@ use bon::Builder;
 ///     let packet = Packet::new(packet);
 ///     handle(packet);
 /// }
-/// # Ok::<(), std::io::Error>(())
 /// ```
 ///
 /// # Errors
