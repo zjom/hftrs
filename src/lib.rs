@@ -1,4 +1,6 @@
-pub mod client;
+mod client;
 mod errors;
-pub mod packet;
+mod packet;
+pub use client::{Datagram, MoldUDP64};
 pub use errors::MoldUdpError;
+pub use packet::*;
