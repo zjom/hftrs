@@ -47,8 +47,12 @@ use bon::Builder;
 ///
 /// // Datagrams arrive in receive order — live and retransmitted packets are
 /// // interleaved. The consumer is responsible for ordering by seq num.
+/// // Minimal validation is down on datagrams.
+/// // Only that they are at least 20 bytes in length.
 /// while let Ok(datagram) = rx.recv() {
-///     handle(datagram);
+///     // Use [`moldudp::Downstream`] to construct a 0 allocation view on the bytes.
+///     let packet = Downstream::new(packet);
+///     handle(packet);
 /// }
 /// # Ok::<(), std::io::Error>(())
 /// ```
