@@ -53,6 +53,7 @@ impl<'a> Packet<'a> {
             },
         }
     }
+
     /// When the current session is complete, Downstream Packets are sent with a Message Count of 0xFFFF
     /// (hex,or 65535 in decimal) for a short while in place of Heartbeats. These Downstream Packets contain the next
     /// expected Sequence Number, just like Heartbeats. While the End of Session messages persist, re-requests may
