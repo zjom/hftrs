@@ -216,7 +216,6 @@ pub struct SystemEventMessage {
 /// “E” End of System hours. It indicates that Nasdaq is now closed and will not accept any new orders today.
 /// It is still possible to receive Broken Trade messages and Order Delete messages after the End of Day
 /// .“C” End of Messages. This is always the last message sent in any trading day.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SystemEventCode {
     StartOfMessages = b'O',
@@ -245,5 +244,255 @@ impl SystemEventCode {
 impl From<u8> for SystemEventCode {
     fn from(value: u8) -> Self {
         SystemEventCode::from_byte(value)
+    }
+}
+
+/// Stock Directory
+/// At the start of each trading day, Nasdaq disseminates stock directory messages for all active symbols in the Nasdaq
+/// execution system.
+/// Market data redistributors should process this message to populate the Financial Status Indicator (required display field) and the Market Category (recommended display field) for Nasdaq listed issues.
+#[itch_message(tag = b'R')]
+pub struct StockDirectory {
+    /// Locate Code uniquely assigned to the security symbol for the day.
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Time at which the directory message was generated. Refer to Data Types for field processing notes.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Denotes the security symbol for the issue in the Nasdaq execution system.
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Indicates Listing market or listing market tier for the issue
+    #[field(offset = 19, len = 1)]
+    market_category: MarketCategory,
+    /// For Nasdaq listed issues, this field indicates when a firm is not in compliance with Nasdaq continued listing requirements
+    #[field(offset = 20, len = 1)]
+    financial_status_indicator: FinancialStatusIndicator,
+    /// Denotes the number of shares that represent a round lot for the issue
+    #[field(offset = 21, len = 4)]
+    round_lot_size: u32,
+    /// Indicates if Nasdaq system limits order entry for issue
+    #[field(offset = 25, len = 1)]
+    round_lots_only: RoundLotsOnly,
+    /// Identifies the security class for the issue as assigned by Nasdaq. See Appendix for allowable values.
+    #[field(offset = 26, len = 1)]
+    issue_classification: u8,
+    /// Identifies the security sub-type for the issue as assigned by Nasdaq. See Appendix for allowable values.
+    #[field(offset = 27, len = 2)]
+    issue_sub_type: &[u8],
+    /// Denotes if an issue or quoting participant record is set-up in Nasdaq systems in a live/production, test, or demo state.
+    #[field(offset = 29, len = 1)]
+    authenticity: Authenticity,
+    /// Indicates if a security is subject to mandatory close-out of short sales under SEC Rule 203(b)(3).
+    #[field(offset = 30, len = 1)]
+    short_sale_threshold_indicator: ShortSaleThresholdIndicator,
+    /// Indicates if the Nasdaq security is set up for IPO release.
+    #[field(offset = 31, len = 1)]
+    ipo_flag: IpoFlag,
+    /// Indicates which Limit Up / Limit Down price band calculation parameter is to be used for the instrument.
+    #[field(offset = 32, len = 1)]
+    luld_reference_price_tier: LuldReferencePriceTier,
+    /// Indicates whether the security is an exchange traded product (ETP).
+    #[field(offset = 33, len = 1)]
+    etp_flag: EtpFlag,
+    /// Tracks the integral relationship of the ETP to the underlying index.
+    #[field(offset = 34, len = 4)]
+    etp_leverage_factor: u32,
+    /// Indicates the directional relationship between the ETP and Underlying index.
+    #[field(offset = 38, len = 1)]
+    inverse_indicator: InverseIndicator,
+}
+
+#[repr(u8)]
+pub enum MarketCategory {
+    NasdaqGlobalSelectMarket = b'Q',
+    NasdaqGlobalMarket = b'G',
+    NasdaqCapitalMarket = b'S',
+    NYSE = b'N',
+    NYSEAmerican = b'A',
+    NYSEArca = b'P',
+    BATSZExchange = b'Z',
+    InvestorsExchangeLLC = b'V',
+    NotAvailable = b' ',
+    Unknown(u8),
+}
+
+impl From<u8> for MarketCategory {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Q' => Self::NasdaqGlobalSelectMarket,
+            b'G' => Self::NasdaqGlobalMarket,
+            b'S' => Self::NasdaqCapitalMarket,
+            b'N' => Self::NYSE,
+            b'A' => Self::NYSEAmerican,
+            b'P' => Self::NYSEArca,
+            b'Z' => Self::BATSZExchange,
+            b'V' => Self::InvestorsExchangeLLC,
+            b' ' => Self::NotAvailable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum FinancialStatusIndicator {
+    Deficient = b'D',
+    Delinquent = b'E',
+    Bankrupt = b'Q',
+    Suspended = b'S',
+    DeficientBankrupt = b'G',
+    DeficientDelinquent = b'H',
+    DelinquentBankrupt = b'J',
+    DeficientDelinquentBankrupt = b'K',
+    CreationsRedemptionsSuspendedETP = b'C',
+    Normal = b'N',
+    Unknown(u8),
+}
+
+impl From<u8> for FinancialStatusIndicator {
+    fn from(value: u8) -> Self {
+        match value {
+            b'D' => Self::Deficient,
+            b'E' => Self::Delinquent,
+            b'Q' => Self::Bankrupt,
+            b'S' => Self::Suspended,
+            b'G' => Self::DeficientBankrupt,
+            b'H' => Self::DeficientDelinquent,
+            b'J' => Self::DelinquentBankrupt,
+            b'K' => Self::DeficientDelinquentBankrupt,
+            b'C' => Self::CreationsRedemptionsSuspendedETP,
+            b'N' => Self::Normal,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum RoundLotsOnly {
+    Yes = b'Y',
+    No = b'N',
+    Unknown(u8),
+}
+
+impl From<u8> for RoundLotsOnly {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Y' => Self::Yes,
+            b'N' => Self::No,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum Authenticity {
+    LiveProduction = b'P',
+    Test = b'T',
+    Unknown(u8),
+}
+
+impl From<u8> for Authenticity {
+    fn from(value: u8) -> Self {
+        match value {
+            b'P' => Self::LiveProduction,
+            b'T' => Self::Test,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum ShortSaleThresholdIndicator {
+    Restricted = b'Y',
+    NotRestricted = b'N',
+    NotAvailable = b' ',
+    Unknown(u8),
+}
+
+impl From<u8> for ShortSaleThresholdIndicator {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Y' => Self::Restricted,
+            b'N' => Self::NotRestricted,
+            b' ' => Self::NotAvailable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum IpoFlag {
+    NewIPO = b'Y',
+    NotNewIPO = b'N',
+    NotAvailable = b' ',
+    Unknown(u8),
+}
+
+impl From<u8> for IpoFlag {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Y' => Self::NewIPO,
+            b'N' => Self::NotNewIPO,
+            b' ' => Self::NotAvailable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum LuldReferencePriceTier {
+    Tier1 = b'1',
+    Tier2 = b'2',
+    NotAvailable = b' ',
+    Unknown(u8),
+}
+
+impl From<u8> for LuldReferencePriceTier {
+    fn from(value: u8) -> Self {
+        match value {
+            b'1' => Self::Tier1,
+            b'2' => Self::Tier2,
+            b' ' => Self::NotAvailable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum EtpFlag {
+    IsETP = b'Y',
+    NotETP = b'N',
+    NotAvailable = b' ',
+    Unknown(u8),
+}
+
+impl From<u8> for EtpFlag {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Y' => Self::IsETP,
+            b'N' => Self::NotETP,
+            b' ' => Self::NotAvailable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum InverseIndicator {
+    Inverse = b'Y',
+    NotInverse = b'N',
+    Unknown(u8),
+}
+
+impl From<u8> for InverseIndicator {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Y' => Self::Inverse,
+            b'N' => Self::NotInverse,
+            unknown => Self::Unknown(unknown),
+        }
     }
 }
