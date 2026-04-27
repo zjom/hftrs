@@ -2,7 +2,7 @@
 /// A MoldUDP64 packet may contain a payload of 0 or more data stream messages.
 /// Each MoldUDP64 packet consists of a Downstream Packet Header and of a series of Message Blocks.
 /// The Message Blocks carry the actual data of the stream.
-pub struct DownstreamPacket<'a>(pub &'a [u8]);
+pub struct Downstream<'a>(pub &'a [u8]);
 
 /// A message is an atomic piece of information carried by the MoldUDP64 protocol.
 /// MoldUDP64 can theoretically handle individual messages from zero bytes up
@@ -17,10 +17,10 @@ pub enum SessionStatus {
     Active,
     Inactive,
 }
-impl<'a> DownstreamPacket<'a> {
-    pub const fn new(bytes: &'a [u8]) -> DownstreamPacket<'a> {
+impl<'a> Downstream<'a> {
+    pub const fn new(bytes: &'a [u8]) -> Downstream<'a> {
         debug_assert!(bytes.len() >= Self::MIN_PACKET_LEN);
-        DownstreamPacket(bytes)
+        Downstream(bytes)
     }
     /// A packet is composed of header block + optional messages block.
     /// Header:
@@ -91,7 +91,7 @@ impl<'a> DownstreamPacket<'a> {
     }
 }
 
-impl<'a> IntoIterator for &DownstreamPacket<'a> {
+impl<'a> IntoIterator for &Downstream<'a> {
     type Item = Message<'a>;
     type IntoIter = Messages<'a>;
     fn into_iter(self) -> Self::IntoIter {
