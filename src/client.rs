@@ -8,7 +8,7 @@ use std::{
 };
 use tracing::{error, warn};
 
-use crate::packet::{Downstream, Request};
+use crate::packet::{Packet, Request};
 use bon::Builder;
 
 /// MoldUDP64 client.
@@ -22,7 +22,7 @@ use bon::Builder;
 ///
 /// ```no_run
 /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-/// use moldudp::{MoldUDP64,Downstream};
+/// use moldudp::{MoldUDP64,Packet};
 ///
 /// let rx = MoldUDP64::builder()
 ///     // Multicast group + port carrying the live downstream feed.
@@ -47,11 +47,11 @@ use bon::Builder;
 ///
 /// // Datagrams arrive in receive order — live and retransmitted packets are
 /// // interleaved. The consumer is responsible for ordering by seq num.
-/// // Minimal validation is down on datagrams.
-/// // Only that they are at least 20 bytes in length.
+/// // Minimal validation is done on datagrams, only that they are at least
+/// // 20 bytes in length.
 /// while let Ok(datagram) = rx.recv() {
-///     // Use [`moldudp::Downstream`] to construct a 0 allocation view on the bytes.
-///     let packet = Downstream::new(packet);
+///     // Use [`moldudp::Packet`] to construct a 0 allocation view on the bytes.
+///     let packet = Packet::new(packet);
 ///     handle(packet);
 /// }
 /// # Ok::<(), std::io::Error>(())
@@ -83,6 +83,12 @@ pub struct MoldUDP64 {
 
 impl MoldUDP64 {
     #[must_use]
+    /// Starts the client with 2 + N [`rerequest_server_addrs`](Self::rerequest_server_addrs) threads.
+    /// Dumps received datagrams into returned receiver channel.
+    /// Datagrams arrive in receive order — live and retransmitted packets are
+    /// interleaved. The consumer is responsible for ordering by seq num.
+    /// Minimal validation is done on datagrams, only that they are at least
+    /// 20 bytes in length.
     pub fn start(&self) -> io::Result<Receiver<Datagram>> {
         let mcast_socket = UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
@@ -180,13 +186,13 @@ fn multicast_recv_loop(
             }
         };
 
-        if n < Downstream::MIN_PACKET_LEN {
+        if n < Packet::MIN_PACKET_LEN {
             error!("incomplete multicast datagram");
             let _ = pool.push(buf);
             continue;
         }
 
-        let packet = Downstream::new(&buf);
+        let packet = Packet::new(&buf);
 
         // Gap detection: if the live stream has skipped ahead of what we were
         // expecting, ask the re-request server for the missing range.
@@ -228,7 +234,7 @@ fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Datag
             }
         };
 
-        if n < Downstream::MIN_PACKET_LEN {
+        if n < Packet::MIN_PACKET_LEN {
             error!("incomplete retransmission datagram");
             let _ = pool.push(buf);
             continue;
