@@ -1,3 +1,5 @@
+use std::array::TryFromSliceError;
+
 use itch5_derive::itch_message;
 
 pub enum MessageKind {
@@ -181,6 +183,38 @@ pub enum MessageKind {
     /// The following message is disseminated only for Direct Listing with Capital Raise (DLCR) securities. Nasdaq begins
     /// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
     DirectListingwithCapitalRaisePriceDiscoveryMessage,
+}
+
+pub struct Price4<'a>(&'a [u8]);
+impl Price4<'_> {
+    pub fn into_u32(&self) -> u32 {
+        u32::from_be_bytes(self.0.try_into().unwrap())
+    }
+
+    pub fn into_f64(&self) -> f64 {
+        f64::from(self.into_u32()) / 10000.0
+    }
+}
+
+impl<'a> From<&'a [u8]> for Price4<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self(value)
+    }
+}
+
+pub struct Price8<'a>(&'a [u8]);
+impl Price8<'_> {
+    pub fn into_u64(&self) -> u64 {
+        u64::from_be_bytes(self.0.try_into().unwrap())
+    }
+    pub fn into_f64(&self) -> f64 {
+        self.into_u64() as f64 / 1_0000_0000.0
+    }
+}
+impl<'a> From<&'a [u8]> for Price8<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self(value)
+    }
 }
 
 /// System Event Message
