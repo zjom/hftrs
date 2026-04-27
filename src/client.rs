@@ -16,7 +16,7 @@ use bon::Builder;
 /// Subscribes to the downstream multicast group and transparently re-requests
 /// any missed packets from a unicast re-request server. Both live and
 /// retransmitted Downstream packets are surfaced through a single channel of
-/// [`PooledDatagram`]s — the consumer reassembles by session ident + seq num.
+/// [`Datagram`]s — the consumer reassembles by session ident + seq num.
 ///
 /// # Example
 ///
