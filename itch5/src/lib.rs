@@ -201,7 +201,7 @@ pub struct SystemEventMessage {
     #[field(offset = 5, len = 6)]
     timestamp: u64,
     #[field(offset = 11, len = 1)]
-    event_code: u8,
+    event_code: SystemEventCode,
 }
 
 /// Nasdaq supports the following event codes on a daily basis on the TotalView-ITCH data feed.
@@ -216,4 +216,34 @@ pub struct SystemEventMessage {
 /// “E” End of System hours. It indicates that Nasdaq is now closed and will not accept any new orders today.
 /// It is still possible to receive Broken Trade messages and Order Delete messages after the End of Day
 /// .“C” End of Messages. This is always the last message sent in any trading day.
-pub enum SystemEventCode {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SystemEventCode {
+    StartOfMessages = b'O',
+    StartOfSystemHours = b'S',
+    StartOfMarketHours = b'Q',
+    EndOfMarketHours = b'M',
+    EndOfSystemHours = b'E',
+    EndOfMessages = b'C',
+
+    Unknown(u8),
+}
+
+impl SystemEventCode {
+    pub fn from_byte(b: u8) -> Self {
+        match b {
+            b'O' => Self::StartOfMessages,
+            b'S' => Self::StartOfSystemHours,
+            b'Q' => Self::StartOfMarketHours,
+            b'M' => Self::EndOfMarketHours,
+            b'E' => Self::EndOfSystemHours,
+            b'C' => Self::EndOfMessages,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+impl From<u8> for SystemEventCode {
+    fn from(value: u8) -> Self {
+        SystemEventCode::from_byte(value)
+    }
+}
