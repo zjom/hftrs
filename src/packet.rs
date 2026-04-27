@@ -184,8 +184,6 @@ impl<'a> Iterator for Messages<'a> {
 
 impl<'a> ExactSizeIterator for Messages<'a> {}
 
-use std::array;
-
 /// The Request Packet is sent to request the retransmission of a particular message or group of messages. The
 /// request packet is sent to a Re-request server. A receiver may need to send this request when it detects a
 /// sequence number gap in received messages. The response to a valid Request Packet is a standard Downstream
@@ -201,7 +199,7 @@ impl Request {
     /// If greater, it is cut off. If less, it is padded.
     #[inline]
     pub(crate) fn new(session_ident: &str, seq_num: u64, msg_count: u16) -> Request {
-        let mut buf: [u8; 20] = array::repeat(0);
+        let mut buf = [0u8; 20];
 
         let bytes = session_ident.as_bytes();
         let end = Self::SESSION_OFFSET + std::cmp::min(session_ident.len(), Self::SESSION_LENGTH);
