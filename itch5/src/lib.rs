@@ -496,3 +496,1037 @@ impl From<u8> for InverseIndicator {
         }
     }
 }
+
+/// Stock Trading Action Message
+/// Nasdaq uses this administrative message to indicate the current trading status of a security to the trading
+/// community.
+/// Prior to the start of system hours, Nasdaq will send out a Trading Action spin. In the spin, Nasdaq will send out a
+/// Stock Trading Action message with the “T” (Trading Resumption) for all Nasdaq--- and other exchange-•-listed
+/// securities that are eligible for trading at the start of the system hours. If a security is absent from the pre-•-
+/// opening Trading Action spin, firms should assume that the security is being treated as halted in the Nasdaq
+/// platform at the start of the system hours. Please note that securities may be halted in the Nasdaq system for
+/// regulatory or operational reasons.
+/// After the start of system hours, Nasdaq will use the Trading Action message to relay changes in trading status for an
+/// individual security. Messages will be sent when a stock is:
+/// • Halted
+/// • Paused*
+/// • Released for quotation
+/// • Released for trading
+/// * The paused status will be disseminated for NASDAQ---listed securities only. Trading pauses on non---NASDAQ listed securities
+/// will be treated simply as a halt.
+#[itch_message(tag = b'H')]
+pub struct StockTradingAction {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Indicates the current trading state for the stock.
+    #[field(offset = 19, len = 1)]
+    trading_state: TradingState,
+    /// Reserved.
+    #[field(offset = 20, len = 1)]
+    reserved: u8,
+    /// Trading Action reason.
+    #[field(offset = 21, len = 4)]
+    reason: &[u8],
+}
+
+#[repr(u8)]
+pub enum TradingState {
+    /// Halted across all U.S. equity markets / SROs
+    Halted = b'H',
+    /// Paused across all U.S. equity markets / SROs (Nasdaq-listed securities only)
+    Paused = b'P',
+    /// Quotation only period for cross-SRO halt or pause
+    QuotationOnly = b'Q',
+    /// Trading on Nasdaq
+    Trading = b'T',
+    Unknown(u8),
+}
+
+impl From<u8> for TradingState {
+    fn from(value: u8) -> Self {
+        match value {
+            b'H' => Self::Halted,
+            b'P' => Self::Paused,
+            b'Q' => Self::QuotationOnly,
+            b'T' => Self::Trading,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Reg SHO Short Sale Price Test Restricted Indicator
+/// In February 2011, the Securities and Exchange Commission (SEC) implemented changes to Rule 201 of the
+/// Regulation SHO (Reg SHO). For details, please refer to SEC Release Number 34-61595. In association with
+/// the Reg SHO rule change, Nasdaq will introduce the following Reg SHO Short Sale Price Test Restricted
+/// Indicator message format.
+/// For Nasdaq-•-listed issues, Nasdaq supports a full pre-•-opening spin of Reg SHO Short Sale Price Test Restricted
+/// Indicator messages indicating the Rule 201 status for all active issues. Nasdaq also sends the Reg SHO
+/// Short Sale Price Test Restricted Indicator message in the event of an intraday status change.
+/// For other exchange-•-listed issues, Nasdaq relays the Reg SHO Short Sale Price Test Restricted Indicator
+/// message when it receives an update from the primary listing exchange.
+/// Nasdaq processes orders based on the most Reg SHO Restriction status value.
+#[itch_message(tag = b'Y')]
+pub struct RegShoRestriction {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    locate_code: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Denotes the Reg SHO Short Sale Price Test Restriction status for the issue at the time of the message dissemination.
+    #[field(offset = 19, len = 1)]
+    reg_sho_action: RegShoAction,
+}
+
+#[repr(u8)]
+pub enum RegShoAction {
+    /// No price test in place
+    NoPriceTest = b'0',
+    /// Reg SHO Short Sale Price Test Restriction in effect due to an intra-day price drop in security
+    RestrictionInEffectIntradayDrop = b'1',
+    /// Reg SHO Short Sale Price Test Restriction remains in effect
+    RestrictionRemainsInEffect = b'2',
+    Unknown(u8),
+}
+
+impl From<u8> for RegShoAction {
+    fn from(value: u8) -> Self {
+        match value {
+            b'0' => Self::NoPriceTest,
+            b'1' => Self::RestrictionInEffectIntradayDrop,
+            b'2' => Self::RestrictionRemainsInEffect,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Market Participant Position message
+/// At the start of each trading day, Nasdaq disseminates a spin of market participant position messages. The
+/// message provides the Primary Market Maker status, Market Maker mode and Market Participant state for
+/// each Nasdaq market participant firm registered in an issue. Market participant firms may use these fields to
+/// comply with certain marketplace rules.
+/// Throughout the day, Nasdaq will send out this message only if Nasdaq Operations changes the status of a
+/// market participant firm in an issue.
+#[itch_message(tag = b'L')]
+pub struct MarketParticipantPosition {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Denotes the market participant identifier for which the position message is being generated
+    #[field(offset = 11, len = 4)]
+    mpid: &[u8],
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 15, len = 8)]
+    stock: &[u8],
+    /// Indicates if the market participant firm qualifies as a Primary Market Maker in accordance with Nasdaq marketplace rules
+    #[field(offset = 23, len = 1)]
+    primary_market_maker: PrimaryMarketMaker,
+    /// Indicates the quoting participant’s registration status in relation to SEC Rules 101 and 104 of Regulation M
+    #[field(offset = 24, len = 1)]
+    market_maker_mode: MarketMakerMode,
+    /// Indicates the market participant’s current registration status in the issue
+    #[field(offset = 25, len = 1)]
+    market_participant_state: MarketParticipantState,
+}
+
+#[repr(u8)]
+pub enum PrimaryMarketMaker {
+    /// primary market maker
+    Primary = b'Y',
+    /// non-primary market maker
+    NonPrimary = b'N',
+    Unknown(u8),
+}
+
+impl From<u8> for PrimaryMarketMaker {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Y' => Self::Primary,
+            b'N' => Self::NonPrimary,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum MarketMakerMode {
+    /// normal
+    Normal = b'N',
+    /// passive
+    Passive = b'P',
+    /// syndicate
+    Syndicate = b'S',
+    /// pre-syndicate
+    PreSyndicate = b'R',
+    /// penalty
+    Penalty = b'L',
+    Unknown(u8),
+}
+
+impl From<u8> for MarketMakerMode {
+    fn from(value: u8) -> Self {
+        match value {
+            b'N' => Self::Normal,
+            b'P' => Self::Passive,
+            b'S' => Self::Syndicate,
+            b'R' => Self::PreSyndicate,
+            b'L' => Self::Penalty,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum MarketParticipantState {
+    /// Active
+    Active = b'A',
+    /// Excused/Withdrawn
+    Deleted = b'D',
+    ExcusedWithdrawn = b'E',
+    /// Withdrawn
+    Withdrawn = b'W',
+    /// Suspended
+    Suspended = b'S',
+    /// Deleted
+    Unknown(u8),
+}
+
+impl From<u8> for MarketParticipantState {
+    fn from(value: u8) -> Self {
+        match value {
+            b'A' => Self::Active,
+            b'E' => Self::ExcusedWithdrawn,
+            b'W' => Self::Withdrawn,
+            b'S' => Self::Suspended,
+            b'D' => Self::Deleted,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Market wide circuit breaker Decline Level Message
+#[itch_message(tag = b'V')]
+pub struct MwcbDeclineLevel {
+    /// Always set to 0
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Time at which the MWCB Decline Level message was generated
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Denotes the MWCB Level 1 Value.
+    #[field(offset = 11, len = 8)]
+    level_1: u64,
+    /// Denotes the MWCB Level 2 Value.
+    #[field(offset = 19, len = 8)]
+    level_2: u64,
+    /// Denotes the MWCB Level 3 Value.
+    #[field(offset = 27, len = 8)]
+    level_3: u64,
+}
+
+/// Market-Wide Circuit Breaker Status message
+#[itch_message(tag = b'W')]
+pub struct MwcbStatus {
+    /// Always set to 0
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Time at which the MWCB Breaker Status message was generated
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Denotes the MWCB Level that was breached.
+    #[field(offset = 11, len = 1)]
+    breached_level: BreachedLevel,
+}
+
+#[repr(u8)]
+pub enum BreachedLevel {
+    /// Level 1
+    Level1 = b'1',
+    /// Level 2
+    Level2 = b'2',
+    /// Level 3
+    Level3 = b'3',
+    Unknown(u8),
+}
+
+impl From<u8> for BreachedLevel {
+    fn from(value: u8) -> Self {
+        match value {
+            b'1' => Self::Level1,
+            b'2' => Self::Level2,
+            b'3' => Self::Level3,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// IPO Quoting Period Update Message
+/// Indicates the anticipated IPO quotation release time of a security.
+#[itch_message(tag = b'K')]
+pub struct IpoQuotingPeriodUpdate {
+    /// Always set to 0
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Time at which the IPO Quoting Period Update message was generated
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Denotes the IPO release time, in seconds since midnight, for quotation to the nearest second.
+    /// NOTE: If the quotation period is being canceled/postponed, IPO Quotation Time and IPO Price will be set to 0.
+    #[field(offset = 19, len = 4)]
+    ipo_quotation_release_time: u32,
+    /// Anticipated Quotation Release Time or IPO Release Canceled/Postponed
+    #[field(offset = 23, len = 1)]
+    ipo_quotation_release_qualifier: IpoQuotationReleaseQualifier,
+    /// Denotes the IPO Price to be used for intraday net change calculations.
+    /// Prices are given in decimal format with 6 whole number places followed by 4 decimal digits.
+    #[field(offset = 24, len = 4)]
+    ipo_price: u32,
+}
+
+#[repr(u8)]
+pub enum IpoQuotationReleaseQualifier {
+    /// Anticipated Quotation Release Time: This value would be used when Nasdaq Market Operations initially enters the IPO instrument for release
+    Anticipated = b'A',
+    /// IPO Release Canceled/Postponed: This value would be used when Nasdaq Market Operations cancels or postpones the release of the new IPO instrument
+    CanceledPostponed = b'C',
+    Unknown(u8),
+}
+
+impl From<u8> for IpoQuotationReleaseQualifier {
+    fn from(value: u8) -> Self {
+        match value {
+            b'A' => Self::Anticipated,
+            b'C' => Self::CanceledPostponed,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Limit Up – Limit Down (LULD) Auction Collar
+/// Indicates the auction collar thresholds within which a paused security can reopen following a LULD Trading pause.
+#[itch_message(tag = b'J')]
+pub struct LuldAuctionCollar {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds past midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Reference price used to set the Auction Collars
+    #[field(offset = 19, len = 4)]
+    auction_collar_reference_price: u32,
+    /// Indicates the price of the Upper Auction Collar Threshold
+    #[field(offset = 23, len = 4)]
+    upper_auction_collar_price: u32,
+    /// Indicates the price of the Lower Auction Collar Threshold
+    #[field(offset = 27, len = 4)]
+    lower_auction_collar_price: u32,
+    /// Indicates the number of the extensions to the Reopening Auction
+    #[field(offset = 31, len = 4)]
+    auction_collar_extension: u32,
+}
+
+/// Operational Halt Message
+/// The Exchange uses this message to indicate the current Operational Status of a security to the trading
+/// community. An Operational Halt means that there has been an interruption of service on the identified
+/// security impacting only the designated Market Center. These Halts differ from the “Stock Trading
+/// Action” message types since an Operational Halt is specific to the exchange for which it is declared, and
+/// does not interrupt the ability of the trading community to trade the identified instrument on any other
+/// marketplace.
+/// Nasdaq uses this administrative message to indicate the current trading status of the three market centers
+/// operated by Nasdaq.
+#[itch_message(tag = b'h')]
+pub struct OperationalHalt {
+    /// Locate code uniquely assigned to the security symbol for the day.
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Time at which the Operational Halt message was generated.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Denotes the security symbol for the issue in Nasdaq execution system
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Market Code
+    #[field(offset = 19, len = 1)]
+    market_code: MarketCode,
+    /// Operational Halt Action
+    #[field(offset = 20, len = 1)]
+    operational_halt_action: OperationalHaltAction,
+}
+
+#[repr(u8)]
+pub enum MarketCode {
+    /// Nasdaq
+    Nasdaq = b'Q',
+    /// BX
+    BX = b'B',
+    /// PSX
+    PSX = b'X',
+    Unknown(u8),
+}
+
+impl From<u8> for MarketCode {
+    fn from(value: u8) -> Self {
+        match value {
+            b'Q' => Self::Nasdaq,
+            b'B' => Self::BX,
+            b'X' => Self::PSX,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum OperationalHaltAction {
+    /// Operationally Halted on the identified Market
+    OperationallyHalted = b'H',
+    /// Operational Halt has been lifted and Trading resumed
+    TradingResumed = b'T',
+    Unknown(u8),
+}
+
+impl From<u8> for OperationalHaltAction {
+    fn from(value: u8) -> Self {
+        match value {
+            b'H' => Self::OperationallyHalted,
+            b'T' => Self::TradingResumed,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Add Order – No MPID Attribution Message
+/// This message will be generated for unattributed orders accepted by the Nasdaq system. (Note: If a firm wants to display a MPID for unattributed orders, Nasdaq recommends that it use the MPID of “NSDQ”.)
+#[itch_message(tag = b'A')]
+pub struct AddOrderNoMpidAttribution {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The unique reference number assigned to the new order at the time of receipt.
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+    /// The type of order being added.
+    #[field(offset = 19, len = 1)]
+    buy_sell_indicator: BuySellIndicator,
+    /// The total number of shares associated with the order being added to the book.
+    #[field(offset = 20, len = 4)]
+    shares: u32,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 24, len = 8)]
+    stock: &[u8],
+    /// The display price of the new order. Refer to Data Types for field processing notes.
+    #[field(offset = 32, len = 4)]
+    price: u32,
+}
+
+#[repr(u8)]
+pub enum BuySellIndicator {
+    /// Buy Order
+    Buy = b'B',
+    /// Sell Order
+    Sell = b'S',
+    Unknown(u8),
+}
+
+impl From<u8> for BuySellIndicator {
+    fn from(value: u8) -> Self {
+        match value {
+            b'B' => Self::Buy,
+            b'S' => Self::Sell,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Add Order - MPID Attribution Message
+/// This message will be generated for attributed orders and quotations accepted by the Nasdaq system.
+#[itch_message(tag = b'F')]
+pub struct AddOrderMpidAttribution {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The unique reference number assigned to the new order at the time of receipt.
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+    /// The type of order being added.
+    #[field(offset = 19, len = 1)]
+    buy_sell_indicator: BuySellIndicator,
+    /// The total number of shares associated with the order being added to the book
+    #[field(offset = 20, len = 4)]
+    shares: u32,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 24, len = 8)]
+    stock: &[u8],
+    /// The display price of the new order. Refer to Data Types for field processing notes.
+    #[field(offset = 32, len = 4)]
+    price: u32,
+    /// Nasdaq Market participant identifier associated with the entered order
+    #[field(offset = 36, len = 4)]
+    attribution: &[u8],
+}
+
+/// Order Executed Message
+/// This message is sent whenever an order on the book is executed in whole or in part. It is possible to receive several
+/// Order Executed Messages for the same order reference number if that order is executed in several parts. The
+/// multiple Order Executed Messages on the same order are cumulative.
+/// By combining the executions from both types of Order Executed Messages and the Trade Message, it is possible to
+/// build a complete view of all non-•-cross executions that happen on Nasdaq. Cross execution information is available in one bulk print per symbol via the Cross Trade Message.
+#[itch_message(tag = b'E')]
+pub struct OrderExecuted {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The unique reference number assigned to the new order at the time of receipt
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+    /// The number of shares executed
+    #[field(offset = 19, len = 4)]
+    executed_shares: u32,
+    /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
+    #[field(offset = 23, len = 8)]
+    match_number: u64,
+}
+
+/// Order Executed With Price Message
+/// This message is sent whenever an order on the book is executed in whole or in part at a price different from the
+/// initial display price. Since the execution price is different than the display price of the original Add Order, Nasdaq
+/// includes a price field within this execution message.
+/// It is possible to receive multiple Order Executed and Order Executed With Price messages for the same order if that
+/// order is executed in several parts. The multiple Order Executed messages on the same order are cumulative.
+/// These executions may be marked as non-•-printable. If the execution is marked as non-•-printed, it means that the
+/// shares will be included into a later bulk print (e.g., in the case of cross executions). If a firm is looking to use the data
+/// in time-•-and-•-sales displays or volume calculations, Nasdaq recommends that firms ignore messages marked as non-
+/// -- printable to prevent double counting.
+#[itch_message(tag = b'C')]
+pub struct OrderExecutedWithPrice {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The unique reference number assigned to the new order at the time of receipt
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+    /// The number of shares executed
+    #[field(offset = 19, len = 4)]
+    executed_shares: u32,
+    /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
+    #[field(offset = 23, len = 8)]
+    match_number: u64,
+    /// Indicates if the execution should be reflected on time and sales displays and volume calculations
+    #[field(offset = 31, len = 1)]
+    printable: Printable,
+    /// The Price at which the order execution occurred. Refer to Data Types for field processing notes
+    #[field(offset = 32, len = 4)]
+    execution_price: u32,
+}
+
+#[repr(u8)]
+pub enum Printable {
+    /// Non-Printable
+    NonPrintable = b'N',
+    /// Printable
+    Printable = b'Y',
+    Unknown(u8),
+}
+
+impl From<u8> for Printable {
+    fn from(value: u8) -> Self {
+        match value {
+            b'N' => Self::NonPrintable,
+            b'Y' => Self::Printable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Order Cancel Message
+/// This message is sent whenever an order on the book is modified as a result of a partial cancellation.
+#[itch_message(tag = b'X')]
+pub struct OrderCancel {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The reference number of the order being canceled
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+    /// The number of shares being removed from the display size of the order as a result of a cancellation
+    #[field(offset = 19, len = 4)]
+    cancelled_shares: u32,
+}
+
+/// Order Delete Message
+/// This message is sent whenever an order on the book is being cancelled. All remaining shares are no longer accessible so the order must be removed from the book.
+#[itch_message(tag = b'D')]
+pub struct OrderDelete {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The reference number of the order being canceled
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+}
+
+/// Order Replace Message
+/// This message is sent whenever an order on the book has been cancel-replaced. All remaining shares from the original order are no longer accessible, and must be removed. The new order details are provided for the replacement, along with a new order reference number which will be used henceforth. Since the side, stock symbol and attribution (if any) cannot be changed by an Order Replace event, these fields are not included in the message. Firms should retain the side, stock symbol and MPID from the original Add Order message.
+#[itch_message(tag = b'U')]
+pub struct OrderReplace {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The original order reference number of the order being replaced
+    #[field(offset = 11, len = 8)]
+    original_order_reference_number: u64,
+    /// The new reference number for this order at time of replacement
+    /// Please note that the Nasdaq system will use this new order reference number for all subsequent updates
+    #[field(offset = 19, len = 8)]
+    new_order_reference_number: u64,
+    /// The new total displayed quantity
+    #[field(offset = 27, len = 4)]
+    shares: u32,
+    /// The new display price for the order
+    /// Please refer to Data Types for field processing notes
+    #[field(offset = 31, len = 4)]
+    price: u32,
+}
+
+/// Trade Message
+/// The Trade Message is designed to provide execution details for normal match events involving non-displayable order types.
+/// Since no Add Order Message is generated when a non-displayed order is initially received, Nasdaq cannot use the Order Executed messages for all matches. Therefore this message indicates when a match occurs between non-displayable order types. A Trade Message is transmitted each time a non-displayable order is executed in whole or in part. It is possible to receive multiple Trade Messages for the same order if that order is executed in several parts. Trade Messages for the same order are cumulative.
+/// Trade Messages should be included in Nasdaq time-and-sales displays as well as volume and other market statistics. Since Trade Messages do not affect the book, however, they may be ignored by firms just looking to build and track the Nasdaq execution system display.
+#[itch_message(tag = b'P')]
+pub struct Trade {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The unique reference number assigned to the order on the book being executed.
+    /// Effective December 6, 2010, Nasdaq will populate the Order Reference Number field within the Trade (Non- Cross) message as zero. For the binary versions of the TotalView-ITCH data feeds, the field will be null-filled bytes (which encodes sequence of zero)
+    #[field(offset = 11, len = 8)]
+    order_reference_number: u64,
+    /// The type of non-display order on the book being matched
+    /// Effective 07/14/2014, this field will always be “B” regardless of the resting side
+    #[field(offset = 19, len = 1)]
+    buy_sell_indicator: BuySellIndicator,
+    /// The number of shares being matched in this execution
+    #[field(offset = 20, len = 4)]
+    shares: u32,
+    /// Stock Symbol, right padded with spaces
+    #[field(offset = 24, len = 8)]
+    stock: &[u8],
+    /// The match price of the order
+    /// Please refer to Data Types for field processing notes
+    #[field(offset = 32, len = 4)]
+    price: u32,
+    /// The Nasdaq generated session unique Match Number for this trade
+    /// The Match Number is referenced in the Trade Break Message
+    #[field(offset = 36, len = 8)]
+    match_number: u64,
+}
+
+/// Cross Trade Message
+/// Cross Trade message indicates that Nasdaq has completed its cross process for a specific security. Nasdaq sends out
+/// a Cross Trade message for all active issues in the system following the Opening, Closing and EMC cross events. Firms
+/// may use the Cross Trade message to determine when the cross for each security has been completed.
+///
+/// For most issues, the Cross Trade message will indicate the bulk volume associated with the cross event. If the order
+/// interest is insufficient to conduct a cross in a particular issue, however, the Cross Trade message may show the
+/// shares as zero.
+#[itch_message(tag = b'Q')]
+pub struct CrossTrade {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The number of shares matched in the Nasdaq Cross.
+    #[field(offset = 11, len = 8)]
+    shares: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 19, len = 8)]
+    stock: &[u8],
+    /// The price at which the cross occurred. Refer to Data Types for field processing notes.
+    #[field(offset = 27, len = 4)]
+    cross_price: u32,
+    /// The Nasdaq generated day-unique Match Number of this execution.
+    #[field(offset = 31, len = 8)]
+    match_number: u64,
+    /// The Nasdaq cross session for which the message is being generated.
+    #[field(offset = 39, len = 1)]
+    cross_type: CrossType,
+}
+
+/// Broken Trade Message
+/// The Broken Trade Message is sent whenever an execution on Nasdaq is broken. An execution may be broken if it is
+/// found to be “clearly erroneous” pursuant to Nasdaq’s Clearly Erroneous Policy. A trade break is final; once a trade is
+/// broken, it cannot be reinstated.
+/// Firms that use the ITCH feed to create time-and-sales displays or calculate market statistics should be prepared
+/// to process the broken trade message. If a firm is only using the ITCH feed to build a book, however, it may ignore
+/// these messages as they have no impact on the current book.
+#[itch_message(tag = b'B')]
+pub struct BrokenTrade {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The Nasdaq Match Number of the execution that was broken. This refers to a Match Number from a previously
+    /// transmitted Order Executed Message, Order Executed With Price Message, or Trade Message.
+    #[field(offset = 11, len = 8)]
+    match_number: u64,
+}
+
+/// Net Order Imbalance Indicator (NOII) Message
+/// Nasdaq begins disseminating Net Order Imbalance Indicators (NOII) at 9:25 a.m. for the Opening Cross and 3:50 p.m. for the Closing Cross.
+/// Between 9:25 and 9:28 a.m. and 3:50 and 3:55 p.m., Nasdaq disseminates the NOII information every 10 seconds.
+/// Between 9:28 and 9:30 a.m. and 3:55 and 4:00 p.m., Nasdaq disseminates the NOII information every second.
+/// For Nasdaq Halt, IPO and Pauses, NOII messages will be disseminated at 1 second intervals starting 1 second after quoting period starts/trading action is released.
+/// Nasdaq will also disseminate an Extended Trading Close (ETC) message from 4:00 p.m. to 4:05 p.m. at five second intervals.
+#[itch_message(tag = b'I')]
+pub struct NetOrderImbalanceIndicator {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// The total number of shares that are eligible to be matched at the Current Reference Price.
+    #[field(offset = 11, len = 8)]
+    paired_shares: u64,
+    /// The number of shares not paired at the Current Reference Price.
+    #[field(offset = 19, len = 8)]
+    imbalance_shares: u64,
+    /// The market side of the order imbalance.
+    #[field(offset = 27, len = 1)]
+    imbalance_direction: ImbalanceDirection,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 28, len = 8)]
+    stock: &[u8],
+    /// A hypothetical auction-clearing price for cross orders only. Refer to Data Types for field processing notes.
+    #[field(offset = 36, len = 4)]
+    far_price: u32,
+    /// A hypothetical auction-clearing price for cross orders as well as continuous orders. Refer to Data Types for field processing notes.
+    #[field(offset = 40, len = 4)]
+    near_price: u32,
+    /// The price at which the NOII shares are being calculated. Refer to Data Types for field processing notes.
+    #[field(offset = 44, len = 4)]
+    current_reference_price: u32,
+    /// The type of Nasdaq cross for which the NOII message is being generated
+    #[field(offset = 48, len = 1)]
+    cross_type: CrossType,
+    /// This field indicates the absolute value of the percentage of deviation of the Near Indicative Clearing Price to the nearest Current Reference Price.
+    #[field(offset = 49, len = 1)]
+    price_variation_indicator: PriceVariationIndicator,
+}
+
+#[repr(u8)]
+pub enum ImbalanceDirection {
+    /// buy imbalance
+    Buy = b'B',
+    /// sell imbalance
+    Sell = b'S',
+    /// no imbalance
+    NoImbalance = b'N',
+    /// Insufficient orders to calculate
+    InsufficientOrders = b'O',
+    /// Paused
+    Paused = b'P',
+    Unknown(u8),
+}
+
+impl From<u8> for ImbalanceDirection {
+    fn from(value: u8) -> Self {
+        match value {
+            b'B' => Self::Buy,
+            b'S' => Self::Sell,
+            b'N' => Self::NoImbalance,
+            b'O' => Self::InsufficientOrders,
+            b'P' => Self::Paused,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum CrossType {
+    /// Nasdaq Opening Cross
+    NasdaqOpeningCross = b'O',
+    /// Nasdaq Closing Cross
+    NasdaqClosingCross = b'C',
+    /// Cross for IPO and halted / paused securities
+    IpoHaltedPaused = b'H',
+    /// Extended Trading Close
+    ExtendedTradingClose = b'A',
+    Unknown(u8),
+}
+
+impl From<u8> for CrossType {
+    fn from(value: u8) -> Self {
+        match value {
+            b'O' => Self::NasdaqOpeningCross,
+            b'C' => Self::NasdaqClosingCross,
+            b'H' => Self::IpoHaltedPaused,
+            b'A' => Self::ExtendedTradingClose,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum PriceVariationIndicator {
+    /// Less than 1%
+    LessThan1Percent = b'L',
+    /// 1 to 1.99%
+    Between1And1_99Percent = b'1',
+    /// 2 to 2.99%
+    Between2And2_99Percent = b'2',
+    /// 3 to 3.99%
+    Between3And3_99Percent = b'3',
+    /// 4 to 4.99%
+    Between4And4_99Percent = b'4',
+    /// 5 to 5.99%
+    Between5And5_99Percent = b'5',
+    /// 6 to 6.99%
+    Between6And6_99Percent = b'6',
+    /// 7 to 7.99%
+    Between7And7_99Percent = b'7',
+    /// 8 to 8.99%
+    Between8And8_99Percent = b'8',
+    /// 9 to 9.99%
+    Between9And9_99Percent = b'9',
+    /// 10 to 19.99%
+    Between10And19_99Percent = b'A',
+    /// 20 to 29.99%
+    Between20And29_99Percent = b'B',
+    /// 30% or greater
+    GreaterOrEqualTo30Percent = b'C',
+    /// Cannot be calculated
+    CannotBeCalculated = b' ',
+    Unknown(u8),
+}
+
+impl From<u8> for PriceVariationIndicator {
+    fn from(value: u8) -> Self {
+        match value {
+            b'L' => Self::LessThan1Percent,
+            b'1' => Self::Between1And1_99Percent,
+            b'2' => Self::Between2And2_99Percent,
+            b'3' => Self::Between3And3_99Percent,
+            b'4' => Self::Between4And4_99Percent,
+            b'5' => Self::Between5And5_99Percent,
+            b'6' => Self::Between6And6_99Percent,
+            b'7' => Self::Between7And7_99Percent,
+            b'8' => Self::Between8And8_99Percent,
+            b'9' => Self::Between9And9_99Percent,
+            b'A' => Self::Between10And19_99Percent,
+            b'B' => Self::Between20And29_99Percent,
+            b'C' => Self::GreaterOrEqualTo30Percent,
+            b' ' => Self::CannotBeCalculated,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Retail Price Improvement Indicator (RPII)
+/// Identifies a retail interest indication of the Bid, Ask or both the Bid and Ask for Nasdaq-listed securities.
+#[itch_message(tag = b'N')]
+pub struct RetailPriceImprovementIndicator {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight.
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Interest Flag
+    #[field(offset = 19, len = 1)]
+    interest_flag: InterestFlag,
+}
+
+#[repr(u8)]
+pub enum InterestFlag {
+    /// RPI orders available on the buy side
+    BuySide = b'B',
+    /// RPI orders available on the sell side
+    SellSide = b'S',
+    /// RPI orders available on both sides (buy and sell)
+    BothSides = b'A',
+    /// No RPI orders available
+    NoneAvailable = b'N',
+    Unknown(u8),
+}
+
+impl From<u8> for InterestFlag {
+    fn from(value: u8) -> Self {
+        match value {
+            b'B' => Self::BuySide,
+            b'S' => Self::SellSide,
+            b'A' => Self::BothSides,
+            b'N' => Self::NoneAvailable,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
+
+/// Direct Listing with Capital Raise Price Discovery Message
+/// The following message is disseminated only for Direct Listing with Capital Raise (DLCR) securities. Nasdaq begins
+/// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
+#[itch_message(tag = b'O')]
+pub struct DirectListingWithCapitalRaise {
+    /// Locate code identifying the security
+    #[field(offset = 1, len = 2)]
+    stock_locate: u16,
+    /// Nasdaq internal tracking number
+    #[field(offset = 3, len = 2)]
+    tracking_number: u16,
+    /// Nanoseconds since midnight
+    #[field(offset = 5, len = 6)]
+    timestamp: u64,
+    /// Stock symbol, right padded with spaces
+    #[field(offset = 11, len = 8)]
+    stock: &[u8],
+    /// Indicates if the security is eligible to be released for trading
+    #[field(offset = 19, len = 1)]
+    open_eligibility_status: OpenEligibilityStatus,
+    /// 20% below Registration Statement Lower Price
+    #[field(offset = 20, len = 4)]
+    minimum_allowable_price: u32,
+    /// 80% above Registration Statement Highest Price
+    #[field(offset = 24, len = 4)]
+    maximum_allowable_price: u32,
+    /// The current reference price when the DLCR volatility test has successfully passed
+    #[field(offset = 28, len = 4)]
+    near_execution_price: u32,
+    /// The time at which the near execution price was set
+    #[field(offset = 32, len = 8)]
+    near_execution_time: u64,
+    /// Indicates the price of the Lower Auction Collar Threshold (10% below the Near Execution Price)
+    #[field(offset = 40, len = 4)]
+    lower_price_range_collar: u32,
+    /// Indicates the price of the Upper Auction Collar Threshold (10% above the Near Execution Price)
+    #[field(offset = 44, len = 4)]
+    upper_price_range_collar: u32,
+}
+
+#[repr(u8)]
+pub enum OpenEligibilityStatus {
+    /// Not Eligible
+    NotEligible = b'N',
+    /// Eligible
+    Eligible = b'Y',
+    Unknown(u8),
+}
+
+impl From<u8> for OpenEligibilityStatus {
+    fn from(value: u8) -> Self {
+        match value {
+            b'N' => Self::NotEligible,
+            b'Y' => Self::Eligible,
+            unknown => Self::Unknown(unknown),
+        }
+    }
+}
