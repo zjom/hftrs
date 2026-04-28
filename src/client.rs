@@ -22,9 +22,9 @@ use bon::Builder;
 ///
 /// ```no_run
 /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-/// use moldudp::{MoldUDP64,Packet};
+/// use moldudp::{MoldUDP64,Packet,RetransmissionPacket,RetransmissionRequest,PacketKind};
 ///
-/// let rx = MoldUDP64::builder()
+/// let (rx, tx) = MoldUDP64::builder()
 ///     // Multicast group + port carrying the live downstream feed.
 ///     .multicast_addr(SocketAddrV4::new(Ipv4Addr::new(233, 252, 0, 1), 30001))
 ///     // Local NIC to join on. Use `UNSPECIFIED` to let the OS pick.
@@ -51,7 +51,23 @@ use bon::Builder;
 /// // 20 bytes in length.
 /// while let Ok(datagram) = rx.recv() {
 ///     // Use [`moldudp::Packet`] to construct a 0 allocation view on the bytes.
-///     let packet = Packet::new(packet);
+///     let packet = Packet::new(datagram.bytes());
+///
+///     // simple validation of messages
+///     if packet.packet_kind() == PacketKind::Heartbeat ||
+///        packet.packet_kind() == PacketKind::EndOfSession {
+///        continue
+///     }
+///     
+///     if packet.iter().len() != packet.msg_count() {
+///         let rereq = RetransmissionPacket{
+///             session: packet.session_ident_raw(),
+///             seq_num: packet.seq_num(),
+///             msg_count: packet.msg_count()
+///         }
+///         tx.try_send(RetransmissionRequest::new(rereq))?
+///     }
+///
 ///     handle(packet);
 /// }
 /// ```
@@ -91,7 +107,7 @@ impl MoldUDP64 {
     /// interleaved. The consumer is responsible for ordering by seq num.
     /// Minimal validation is done on datagrams, only that they are at least
     /// 20 bytes in length.
-    pub fn start(&self) -> io::Result<Receiver<Datagram>> {
+    pub fn start(&self) -> io::Result<(Receiver<Datagram>, Sender<RetransmissionRequest>)> {
         let mcast_socket = UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
             self.multicast_addr.port(),
@@ -109,7 +125,7 @@ impl MoldUDP64 {
         downstream: UdpSocket,
         rereq: UdpSocket,
         servers: &[SocketAddr],
-    ) -> io::Result<Receiver<Datagram>> {
+    ) -> io::Result<(Receiver<Datagram>, Sender<RetransmissionRequest>)> {
         // --- Buffer pool ---
         let pool: Pool = Arc::new(ArrayQueue::new(POOL_SIZE));
         for _ in 0..POOL_SIZE {
@@ -144,13 +160,19 @@ impl MoldUDP64 {
             let max_rerequest_retries = self.max_rerequest_retries;
             spawn(move || {
                 let mut buf = [0u8; 20];
-                while let Ok((req, attempts)) = req_rx.recv()
+                while let Ok(RetransmissionRequest { req, attempts }) = req_rx.recv()
                     && attempts < max_rerequest_retries
                 {
                     req.serialize_into(&mut buf);
                     if let Err(e) = socket.send_to(buf.as_slice(), &server_addr) {
                         warn!("failed to send re-request to {server_addr}: {e}");
-                        if req_tx.try_send((req, attempts + 1)).is_err() {
+                        if req_tx
+                            .try_send(RetransmissionRequest {
+                                attempts: attempts + 1,
+                                req: req,
+                            })
+                            .is_err()
+                        {
                             error!("re-request queue full or disconnected");
                         }
                     }
@@ -169,7 +191,7 @@ impl MoldUDP64 {
             spawn(move || rerequest_recv_loop(socket, pool, data_tx));
         }
 
-        Ok(data_rx)
+        Ok((data_rx, req_tx))
     }
 }
 
@@ -217,7 +239,7 @@ fn multicast_recv_loop(
                     seq_num: exp_seq,
                     msg_count: msg_count,
                 };
-                if req_tx.try_send((req, 0)).is_err() {
+                if req_tx.try_send(RetransmissionRequest::new(req)).is_err() {
                     error!("re-request queue full or disconnected");
                 }
             }
@@ -311,7 +333,18 @@ impl Drop for Datagram {
     }
 }
 
-type RetransmissionRequest = (RetransmissionPacket, u8);
+pub struct RetransmissionRequest {
+    req: RetransmissionPacket,
+    attempts: u8,
+}
+impl RetransmissionRequest {
+    fn new(packet: RetransmissionPacket) -> Self {
+        RetransmissionRequest {
+            req: packet,
+            attempts: 0,
+        }
+    }
+}
 
 /// The Request Packet is sent to request the retransmission of a particular message or group of messages. The
 /// request packet is sent to a Re-request server. A receiver may need to send this request when it detects a
@@ -321,7 +354,7 @@ type RetransmissionRequest = (RetransmissionPacket, u8);
 /// that socket (in other words, the client need only have one socket open to listen to the multicast and to process
 /// retransmissions, even though the retransmissions are not multicast).
 
-struct RetransmissionPacket {
+pub struct RetransmissionPacket {
     session: [u8; 10],
     seq_num: u64,
     msg_count: u16,
