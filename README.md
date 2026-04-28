@@ -50,3 +50,8 @@ while let Ok(datagram) = rx.recv() {
     handle(packet);
 }
 ```
+
+
+## Roadmap
+
+- [ ] Zero copy reads from network socket
