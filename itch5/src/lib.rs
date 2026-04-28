@@ -191,6 +191,10 @@ pub fn parse<'a>(buf: &'a [u8]) -> (Option<Message<'a>>, &'a [u8]) {
             SystemEventMessage::parse(buf),
             buf.split_at(SystemEventMessage::LEN).1,
         ),
+        b'R' => (
+            StockDirectory::parse(buf),
+            buf.split_at(StockDirectory::LEN).1,
+        ),
         b'H' => (
             StockTradingAction::parse(buf),
             buf.split_at(StockTradingAction::LEN).1,
