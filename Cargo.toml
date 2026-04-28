@@ -1,3 +1,11 @@
-[workspace]
-resolver = "3"
-members = ["itch5", "itch5_derive"]
+[package]
+name = "itch5"
+author = "zjom"
+description = "Parser for Nasdaq TotalView-ITCH 5.0"
+license = "Unlicense"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+itch5_derive = {path = "itch5_derive"}
+
