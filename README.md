@@ -17,9 +17,9 @@ A blazingly fast [MoldUDP64](https://www.nasdaqtrader.com/content/technicalsuppo
 
 ```rust
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use moldudp::{MoldUDP64,Packet};
+use moldudp::{MoldUDP64,Packet,RetransmissionPacket,RetransmissionRequest,PacketKind};
 
-let rx = MoldUDP64::builder()
+let (rx, tx) = MoldUDP64::builder()
     // Multicast group + port carrying the live downstream feed.
     .multicast_addr(SocketAddrV4::new(Ipv4Addr::new(233, 252, 0, 1), 30001))
     // Local NIC to join on. Use `UNSPECIFIED` to let the OS pick.
@@ -46,7 +46,23 @@ let rx = MoldUDP64::builder()
 // 20 bytes in length.
 while let Ok(datagram) = rx.recv() {
     // Use [`moldudp::Packet`] to construct a 0 allocation view on the bytes.
-    let packet = Packet::new(packet);
+    let packet = Packet::new(datagram.bytes());
+
+    // simple validation of messages
+    if packet.packet_kind() == PacketKind::Heartbeat ||
+       packet.packet_kind() == PacketKind::EndOfSession {
+       continue
+    }
+    
+    if packet.iter().len() != packet.msg_count() {
+        let rereq = RetransmissionPacket{
+            session: packet.session_ident_raw(),
+            seq_num: packet.seq_num(),
+            msg_count: packet.msg_count()
+        }
+        tx.try_send(RetransmissionRequest::new(rereq))?
+    }
+
     handle(packet);
 }
 ```
