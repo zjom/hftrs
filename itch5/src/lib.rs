@@ -1,6 +1,6 @@
 use itch5_derive::itch_message;
 
-pub enum MessageKind<'a> {
+pub enum Message<'a> {
     /// System Event Message
     /// The system event message type is used to signal a market or data feed handler event.
     SystemEventMessage(SystemEventMessage<'a>),
@@ -185,7 +185,7 @@ pub enum MessageKind<'a> {
     ),
 }
 
-pub fn parse<'a>(buf: &'a [u8]) -> (Option<MessageKind<'a>>, &'a [u8]) {
+pub fn parse<'a>(buf: &'a [u8]) -> (Option<Message<'a>>, &'a [u8]) {
     match buf[0] {
         b'S' => (
             SystemEventMessage::parse(buf),

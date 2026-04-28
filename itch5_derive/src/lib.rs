@@ -68,11 +68,11 @@ pub fn itch_message(args: TokenStream, input: TokenStream) -> TokenStream {
             pub const LEN: usize = #total_len;
             pub const TAG: u8  = #tag;
 
-            pub fn parse(buf: &'a [u8]) -> ::core::option::Option<MessageKind> {
+            pub fn parse(buf: &'a [u8]) -> ::core::option::Option<Message> {
                 if buf.len() < Self::LEN || buf[0] != Self::TAG {
                     return ::core::option::Option::None;
                 }
-                ::core::option::Option::Some(MessageKind::#name(Self(buf)))
+                ::core::option::Option::Some(Message::#name(Self(buf)))
             }
 
             #(#accessors)*
