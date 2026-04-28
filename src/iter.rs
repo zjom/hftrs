@@ -1,4 +1,6 @@
+use crate::parse::ParseError;
 use crate::*;
+
 pub trait Visitor {
     fn visit_system_event_message(&mut self, _msg: &SystemEventMessage) {}
     fn visit_stock_directory(&mut self, _msg: &StockDirectory) {}
@@ -87,28 +89,33 @@ impl<'a> Messages<'a> {
         Self { buf }
     }
 
-    pub fn visit_all(mut self, visitor: &mut impl Visitor) {
+    pub fn visit_all(mut self, visitor: &mut impl Visitor) -> Result<(), ParseError> {
         while !self.buf.is_empty() {
-            let (msg, rest) = parse(self.buf);
-            if let Some(msg) = msg {
-                msg.accept(visitor);
-            }
+            let (msg, rest) = parse(self.buf)?;
+            msg.accept(visitor);
             self.buf = rest;
         }
+        Ok(())
     }
 }
 
 impl<'a> Iterator for Messages<'a> {
-    type Item = Message<'a>;
+    type Item = Result<Message<'a>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.buf.is_empty() {
-            let (msg, rest) = parse(self.buf);
-            self.buf = rest;
-            if msg.is_some() {
-                return msg;
+        if self.buf.is_empty() {
+            return None;
+        }
+
+        match parse(self.buf) {
+            Ok((msg, rest)) => {
+                self.buf = rest;
+                Some(Ok(msg))
+            }
+            Err(e) => {
+                self.buf = &[];
+                Some(Err(e))
             }
         }
-        None
     }
 }

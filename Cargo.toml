@@ -7,5 +7,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-itch5_derive = {path = "itch5_derive"}
+zerocopy = { version = "0.8", features = ["derive"] }
 

@@ -1,14 +1,25 @@
-use crate::Message;
-use itch5_derive::itch_message;
+use zerocopy::{
+    FromBytes, Immutable, KnownLayout, Unaligned,
+    network_endian::{U16, U32, U64},
+};
+
+fn read_u48(bytes: &[u8; 6]) -> u64 {
+    let mut b = [0u8; 8];
+    b[2..].copy_from_slice(bytes);
+    u64::from_be_bytes(b)
+}
 
 /// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
 /// fixed point format, where the precision defines the number of decimal places. For example, a field flagged as Price
 /// (4) has an implied 4 decimal places. The maximum value of price (4) in TotalView ITCH is 200,000.0000 (decimal,
 /// 77359400 hex).
-pub struct Price4<'a>(&'a [u8]);
-impl Price4<'_> {
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(transparent)]
+pub struct Price4([u8; 4]);
+
+impl Price4 {
     pub fn into_u32(&self) -> u32 {
-        u32::from_be_bytes(self.0.try_into().unwrap())
+        u32::from_be_bytes(self.0)
     }
 
     pub fn into_f64(&self) -> f64 {
@@ -16,62 +27,70 @@ impl Price4<'_> {
     }
 }
 
-impl<'a> From<&'a [u8]> for Price4<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self(value)
-    }
-}
-
 /// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
 /// fixed point format, where the precision defines the number of decimal places.
-pub struct Price8<'a>(&'a [u8]);
-impl Price8<'_> {
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(transparent)]
+pub struct Price8([u8; 8]);
+
+impl Price8 {
     pub fn into_u64(&self) -> u64 {
-        u64::from_be_bytes(self.0.try_into().unwrap())
+        u64::from_be_bytes(self.0)
     }
+
     pub fn into_f64(&self) -> f64 {
         self.into_u64() as f64 / 1_0000_0000.0
-    }
-}
-impl<'a> From<&'a [u8]> for Price8<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self(value)
     }
 }
 
 /// System Event Message
 /// The system event message type is used to signal a market or data feed handler event. The format is as follows:
 /// Name Offset Length Value Notes
-/// Message Type 0 1 “S” System Event Message
+/// Message Type 0 1 "S" System Event Message
 /// Stock Locate 1 2 Integer Always 0
 /// Tracking Number 3 2 Integer Nasdaq internal tracking number
 /// Timestamp 5 6 Integer Nanoseconds since midnight
 /// Event Code 11 1 Alpha See System Event Codes below
-
-#[itch_message(tag = b'S')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct SystemEventMessage {
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    #[field(offset = 11, len = 1)]
-    event_code: SystemEventCode,
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    event_code: u8,
+}
+
+impl SystemEventMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'S';
+
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    pub fn event_code(&self) -> SystemEventCode {
+        SystemEventCode::from(self.event_code)
+    }
 }
 
 /// Nasdaq supports the following event codes on a daily basis on the TotalView-ITCH data feed.
 /// Code Explanation
-/// “O” Start of Messages. Outside of time stamp messages, the start of day message is the first message sent in
+/// "O" Start of Messages. Outside of time stamp messages, the start of day message is the first message sent in
 /// any trading day.
-/// “S” Start of System hours. This message indicates that NASDAQ is open and ready to start accepting orders.
-/// “Q” Start of Market hours. This message is intended to indicate that Market Hours orders are available
+/// "S" Start of System hours. This message indicates that NASDAQ is open and ready to start accepting orders.
+/// "Q" Start of Market hours. This message is intended to indicate that Market Hours orders are available
 /// for execution.
-/// “M” End of Market hours. This message is intended to indicate that Market Hours orders are no longer
+/// "M" End of Market hours. This message is intended to indicate that Market Hours orders are no longer
 /// available for execution.
-/// “E” End of System hours. It indicates that Nasdaq is now closed and will not accept any new orders today.
+/// "E" End of System hours. It indicates that Nasdaq is now closed and will not accept any new orders today.
 /// It is still possible to receive Broken Trade messages and Order Delete messages after the End of Day
-/// .“C” End of Messages. This is always the last message sent in any trading day.
+/// ."C" End of Messages. This is always the last message sent in any trading day.
 #[repr(u8)]
 pub enum SystemEventCode {
     StartOfMessages = b'O',
@@ -107,59 +126,101 @@ impl From<u8> for SystemEventCode {
 /// At the start of each trading day, Nasdaq disseminates stock directory messages for all active symbols in the Nasdaq
 /// execution system.
 /// Market data redistributors should process this message to populate the Financial Status Indicator (required display field) and the Market Category (recommended display field) for Nasdaq listed issues.
-#[itch_message(tag = b'R')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct StockDirectory {
-    /// Locate Code uniquely assigned to the security symbol for the day.
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Time at which the directory message was generated. Refer to Data Types for field processing notes.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// Denotes the security symbol for the issue in the Nasdaq execution system.
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
-    /// Indicates Listing market or listing market tier for the issue
-    #[field(offset = 19, len = 1)]
-    market_category: MarketCategory,
-    /// For Nasdaq listed issues, this field indicates when a firm is not in compliance with Nasdaq continued listing requirements
-    #[field(offset = 20, len = 1)]
-    financial_status_indicator: FinancialStatusIndicator,
-    /// Denotes the number of shares that represent a round lot for the issue
-    #[field(offset = 21, len = 4)]
-    round_lot_size: u32,
-    /// Indicates if Nasdaq system limits order entry for issue
-    #[field(offset = 25, len = 1)]
-    round_lots_only: RoundLotsOnly,
-    /// Identifies the security class for the issue as assigned by Nasdaq. See Appendix for allowable values.
-    #[field(offset = 26, len = 1)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    market_category: u8,
+    financial_status_indicator: u8,
+    round_lot_size: U32,
+    round_lots_only: u8,
     issue_classification: u8,
+    issue_sub_type: [u8; 2],
+    authenticity: u8,
+    short_sale_threshold_indicator: u8,
+    ipo_flag: u8,
+    luld_reference_price_tier: u8,
+    etp_flag: u8,
+    etp_leverage_factor: U32,
+    inverse_indicator: u8,
+}
+
+impl StockDirectory {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'R';
+
+    /// Locate Code uniquely assigned to the security symbol for the day.
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Time at which the directory message was generated. Refer to Data Types for field processing notes.
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// Denotes the security symbol for the issue in the Nasdaq execution system.
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// Indicates Listing market or listing market tier for the issue
+    pub fn market_category(&self) -> MarketCategory {
+        MarketCategory::from(self.market_category)
+    }
+    /// For Nasdaq listed issues, this field indicates when a firm is not in compliance with Nasdaq continued listing requirements
+    pub fn financial_status_indicator(&self) -> FinancialStatusIndicator {
+        FinancialStatusIndicator::from(self.financial_status_indicator)
+    }
+    /// Denotes the number of shares that represent a round lot for the issue
+    pub fn round_lot_size(&self) -> u32 {
+        self.round_lot_size.get()
+    }
+    /// Indicates if Nasdaq system limits order entry for issue
+    pub fn round_lots_only(&self) -> RoundLotsOnly {
+        RoundLotsOnly::from(self.round_lots_only)
+    }
+    /// Identifies the security class for the issue as assigned by Nasdaq. See Appendix for allowable values.
+    pub fn issue_classification(&self) -> u8 {
+        self.issue_classification
+    }
     /// Identifies the security sub-type for the issue as assigned by Nasdaq. See Appendix for allowable values.
-    #[field(offset = 27, len = 2)]
-    issue_sub_type: &[u8],
+    pub fn issue_sub_type(&self) -> &[u8] {
+        &self.issue_sub_type
+    }
     /// Denotes if an issue or quoting participant record is set-up in Nasdaq systems in a live/production, test, or demo state.
-    #[field(offset = 29, len = 1)]
-    authenticity: Authenticity,
+    pub fn authenticity(&self) -> Authenticity {
+        Authenticity::from(self.authenticity)
+    }
     /// Indicates if a security is subject to mandatory close-out of short sales under SEC Rule 203(b)(3).
-    #[field(offset = 30, len = 1)]
-    short_sale_threshold_indicator: ShortSaleThresholdIndicator,
+    pub fn short_sale_threshold_indicator(&self) -> ShortSaleThresholdIndicator {
+        ShortSaleThresholdIndicator::from(self.short_sale_threshold_indicator)
+    }
     /// Indicates if the Nasdaq security is set up for IPO release.
-    #[field(offset = 31, len = 1)]
-    ipo_flag: IpoFlag,
+    pub fn ipo_flag(&self) -> IpoFlag {
+        IpoFlag::from(self.ipo_flag)
+    }
     /// Indicates which Limit Up / Limit Down price band calculation parameter is to be used for the instrument.
-    #[field(offset = 32, len = 1)]
-    luld_reference_price_tier: LuldReferencePriceTier,
+    pub fn luld_reference_price_tier(&self) -> LuldReferencePriceTier {
+        LuldReferencePriceTier::from(self.luld_reference_price_tier)
+    }
     /// Indicates whether the security is an exchange traded product (ETP).
-    #[field(offset = 33, len = 1)]
-    etp_flag: EtpFlag,
+    pub fn etp_flag(&self) -> EtpFlag {
+        EtpFlag::from(self.etp_flag)
+    }
     /// Tracks the integral relationship of the ETP to the underlying index.
-    #[field(offset = 34, len = 4)]
-    etp_leverage_factor: u32,
+    pub fn etp_leverage_factor(&self) -> u32 {
+        self.etp_leverage_factor.get()
+    }
     /// Indicates the directional relationship between the ETP and Underlying index.
-    #[field(offset = 38, len = 1)]
-    inverse_indicator: InverseIndicator,
+    pub fn inverse_indicator(&self) -> InverseIndicator {
+        InverseIndicator::from(self.inverse_indicator)
+    }
 }
 
 #[repr(u8)]
@@ -357,7 +418,7 @@ impl From<u8> for InverseIndicator {
 /// Nasdaq uses this administrative message to indicate the current trading status of a security to the trading
 /// community.
 /// Prior to the start of system hours, Nasdaq will send out a Trading Action spin. In the spin, Nasdaq will send out a
-/// Stock Trading Action message with the “T” (Trading Resumption) for all Nasdaq--- and other exchange-•-listed
+/// Stock Trading Action message with the "T" (Trading Resumption) for all Nasdaq--- and other exchange-•-listed
 /// securities that are eligible for trading at the start of the system hours. If a security is absent from the pre-•-
 /// opening Trading Action spin, firms should assume that the security is being treated as halted in the Nasdaq
 /// platform at the start of the system hours. Please note that securities may be halted in the Nasdaq system for
@@ -370,29 +431,51 @@ impl From<u8> for InverseIndicator {
 /// • Released for trading
 /// * The paused status will be disseminated for NASDAQ---listed securities only. Trading pauses on non---NASDAQ listed securities
 /// will be treated simply as a halt.
-#[itch_message(tag = b'H')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct StockTradingAction {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
-    /// Indicates the current trading state for the stock.
-    #[field(offset = 19, len = 1)]
-    trading_state: TradingState,
-    /// Reserved.
-    #[field(offset = 20, len = 1)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    trading_state: u8,
     reserved: u8,
+    reason: [u8; 4],
+}
+
+impl StockTradingAction {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'H';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// Indicates the current trading state for the stock.
+    pub fn trading_state(&self) -> TradingState {
+        TradingState::from(self.trading_state)
+    }
+    /// Reserved.
+    pub fn reserved(&self) -> u8 {
+        self.reserved
+    }
     /// Trading Action reason.
-    #[field(offset = 21, len = 4)]
-    reason: &[u8],
+    pub fn reason(&self) -> &[u8] {
+        &self.reason
+    }
 }
 
 #[repr(u8)]
@@ -431,23 +514,41 @@ impl From<u8> for TradingState {
 /// For other exchange-•-listed issues, Nasdaq relays the Reg SHO Short Sale Price Test Restricted Indicator
 /// message when it receives an update from the primary listing exchange.
 /// Nasdaq processes orders based on the most Reg SHO Restriction status value.
-#[itch_message(tag = b'Y')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct RegSHORestriction {
+    tag: u8,
+    locate_code: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    reg_sho_action: u8,
+}
+
+impl RegSHORestriction {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'Y';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    locate_code: u16,
+    pub fn locate_code(&self) -> u16 {
+        self.locate_code.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// Stock symbol, right padded with spaces
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
     /// Denotes the Reg SHO Short Sale Price Test Restriction status for the issue at the time of the message dissemination.
-    #[field(offset = 19, len = 1)]
-    reg_sho_action: RegShoAction,
+    pub fn reg_sho_action(&self) -> RegShoAction {
+        RegShoAction::from(self.reg_sho_action)
+    }
 }
 
 #[repr(u8)]
@@ -479,32 +580,56 @@ impl From<u8> for RegShoAction {
 /// comply with certain marketplace rules.
 /// Throughout the day, Nasdaq will send out this message only if Nasdaq Operations changes the status of a
 /// market participant firm in an issue.
-#[itch_message(tag = b'L')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct MarketParticipantPosition {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    mpid: [u8; 4],
+    stock: [u8; 8],
+    primary_market_maker: u8,
+    market_maker_mode: u8,
+    market_participant_state: u8,
+}
+
+impl MarketParticipantPosition {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'L';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// Denotes the market participant identifier for which the position message is being generated
-    #[field(offset = 11, len = 4)]
-    mpid: &[u8],
+    pub fn mpid(&self) -> &[u8] {
+        &self.mpid
+    }
     /// Stock symbol, right padded with spaces
-    #[field(offset = 15, len = 8)]
-    stock: &[u8],
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
     /// Indicates if the market participant firm qualifies as a Primary Market Maker in accordance with Nasdaq marketplace rules
-    #[field(offset = 23, len = 1)]
-    primary_market_maker: PrimaryMarketMaker,
-    /// Indicates the quoting participant’s registration status in relation to SEC Rules 101 and 104 of Regulation M
-    #[field(offset = 24, len = 1)]
-    market_maker_mode: MarketMakerMode,
-    /// Indicates the market participant’s current registration status in the issue
-    #[field(offset = 25, len = 1)]
-    market_participant_state: MarketParticipantState,
+    pub fn primary_market_maker(&self) -> PrimaryMarketMaker {
+        PrimaryMarketMaker::from(self.primary_market_maker)
+    }
+    /// Indicates the quoting participant's registration status in relation to SEC Rules 101 and 104 of Regulation M
+    pub fn market_maker_mode(&self) -> MarketMakerMode {
+        MarketMakerMode::from(self.market_maker_mode)
+    }
+    /// Indicates the market participant's current registration status in the issue
+    pub fn market_participant_state(&self) -> MarketParticipantState {
+        MarketParticipantState::from(self.market_participant_state)
+    }
 }
 
 #[repr(u8)]
@@ -583,43 +708,79 @@ impl From<u8> for MarketParticipantState {
 }
 
 /// Market wide circuit breaker Decline Level Message
-#[itch_message(tag = b'V')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct MWCBDeclineLevelMessage {
-    /// Always set to 0
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Time at which the MWCB Decline Level message was generated
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// Denotes the MWCB Level 1 Value.
-    #[field(offset = 11, len = 8)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
     level_1: Price8,
-    /// Denotes the MWCB Level 2 Value.
-    #[field(offset = 19, len = 8)]
     level_2: Price8,
-    /// Denotes the MWCB Level 3 Value.
-    #[field(offset = 27, len = 8)]
     level_3: Price8,
 }
 
-/// Market-Wide Circuit Breaker Status message
-#[itch_message(tag = b'W')]
-pub struct MWCBStatusMessage {
+impl MWCBDeclineLevelMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'V';
+
     /// Always set to 0
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Time at which the MWCB Decline Level message was generated
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// Denotes the MWCB Level 1 Value.
+    pub fn level_1(&self) -> &Price8 {
+        &self.level_1
+    }
+    /// Denotes the MWCB Level 2 Value.
+    pub fn level_2(&self) -> &Price8 {
+        &self.level_2
+    }
+    /// Denotes the MWCB Level 3 Value.
+    pub fn level_3(&self) -> &Price8 {
+        &self.level_3
+    }
+}
+
+/// Market-Wide Circuit Breaker Status message
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
+pub struct MWCBStatusMessage {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    breached_level: u8,
+}
+
+impl MWCBStatusMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'W';
+
+    /// Always set to 0
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Time at which the MWCB Breaker Status message was generated
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// Denotes the MWCB Level that was breached.
-    #[field(offset = 11, len = 1)]
-    breached_level: BreachedLevel,
+    pub fn breached_level(&self) -> BreachedLevel {
+        BreachedLevel::from(self.breached_level)
+    }
 }
 
 #[repr(u8)]
@@ -646,31 +807,51 @@ impl From<u8> for BreachedLevel {
 
 /// IPO Quoting Period Update Message
 /// Indicates the anticipated IPO quotation release time of a security.
-#[itch_message(tag = b'K')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct QuotingPeriodUpdate {
-    /// Always set to 0
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Time at which the IPO Quoting Period Update message was generated
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
-    /// Denotes the IPO release time, in seconds since midnight, for quotation to the nearest second.
-    /// NOTE: If the quotation period is being canceled/postponed, IPO Quotation Time and IPO Price will be set to 0.
-    #[field(offset = 19, len = 4)]
-    ipo_quotation_release_time: u32,
-    /// Anticipated Quotation Release Time or IPO Release Canceled/Postponed
-    #[field(offset = 23, len = 1)]
-    ipo_quotation_release_qualifier: IpoQuotationReleaseQualifier,
-    /// Denotes the IPO Price to be used for intraday net change calculations.
-    /// Prices are given in decimal format with 6 whole number places followed by 4 decimal digits.
-    #[field(offset = 24, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    ipo_quotation_release_time: U32,
+    ipo_quotation_release_qualifier: u8,
     ipo_price: Price4,
+}
+
+impl QuotingPeriodUpdate {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'K';
+
+    /// Always set to 0
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Time at which the IPO Quoting Period Update message was generated
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// Denotes the IPO release time, in seconds since midnight, for quotation to the nearest second.
+    pub fn ipo_quotation_release_time(&self) -> u32 {
+        self.ipo_quotation_release_time.get()
+    }
+    /// Anticipated Quotation Release Time or IPO Release Canceled/Postponed
+    pub fn ipo_quotation_release_qualifier(&self) -> IpoQuotationReleaseQualifier {
+        IpoQuotationReleaseQualifier::from(self.ipo_quotation_release_qualifier)
+    }
+    /// Denotes the IPO Price to be used for intraday net change calculations.
+    pub fn ipo_price(&self) -> &Price4 {
+        &self.ipo_price
+    }
 }
 
 #[repr(u8)]
@@ -694,63 +875,107 @@ impl From<u8> for IpoQuotationReleaseQualifier {
 
 /// Limit Up – Limit Down (LULD) Auction Collar
 /// Indicates the auction collar thresholds within which a paused security can reopen following a LULD Trading pause.
-#[itch_message(tag = b'J')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct LULDAuctionCollar {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds past midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
-    /// Reference price used to set the Auction Collars
-    #[field(offset = 19, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
     auction_collar_reference_price: Price4,
-    /// Indicates the price of the Upper Auction Collar Threshold
-    #[field(offset = 23, len = 4)]
     upper_auction_collar_price: Price4,
-    /// Indicates the price of the Lower Auction Collar Threshold
-    #[field(offset = 27, len = 4)]
     lower_auction_collar_price: Price4,
-    /// Indicates the number of the extensions to the Reopening Auction
-    #[field(offset = 31, len = 4)]
     auction_collar_extension: Price4,
+}
+
+impl LULDAuctionCollar {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'J';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds past midnight
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// Reference price used to set the Auction Collars
+    pub fn auction_collar_reference_price(&self) -> &Price4 {
+        &self.auction_collar_reference_price
+    }
+    /// Indicates the price of the Upper Auction Collar Threshold
+    pub fn upper_auction_collar_price(&self) -> &Price4 {
+        &self.upper_auction_collar_price
+    }
+    /// Indicates the price of the Lower Auction Collar Threshold
+    pub fn lower_auction_collar_price(&self) -> &Price4 {
+        &self.lower_auction_collar_price
+    }
+    /// Indicates the number of the extensions to the Reopening Auction
+    pub fn auction_collar_extension(&self) -> &Price4 {
+        &self.auction_collar_extension
+    }
 }
 
 /// Operational Halt Message
 /// The Exchange uses this message to indicate the current Operational Status of a security to the trading
 /// community. An Operational Halt means that there has been an interruption of service on the identified
-/// security impacting only the designated Market Center. These Halts differ from the “Stock Trading
-/// Action” message types since an Operational Halt is specific to the exchange for which it is declared, and
+/// security impacting only the designated Market Center. These Halts differ from the "Stock Trading
+/// Action" message types since an Operational Halt is specific to the exchange for which it is declared, and
 /// does not interrupt the ability of the trading community to trade the identified instrument on any other
 /// marketplace.
 /// Nasdaq uses this administrative message to indicate the current trading status of the three market centers
 /// operated by Nasdaq.
-#[itch_message(tag = b'h')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct OperationalHalt {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    market_code: u8,
+    operational_halt_action: u8,
+}
+
+impl OperationalHalt {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'h';
+
     /// Locate code uniquely assigned to the security symbol for the day.
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Time at which the Operational Halt message was generated.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// Denotes the security symbol for the issue in Nasdaq execution system
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
     /// Market Code
-    #[field(offset = 19, len = 1)]
-    market_code: MarketCode,
+    pub fn market_code(&self) -> MarketCode {
+        MarketCode::from(self.market_code)
+    }
     /// Operational Halt Action
-    #[field(offset = 20, len = 1)]
-    operational_halt_action: OperationalHaltAction,
+    pub fn operational_halt_action(&self) -> OperationalHaltAction {
+        OperationalHaltAction::from(self.operational_halt_action)
+    }
 }
 
 #[repr(u8)]
@@ -795,33 +1020,57 @@ impl From<u8> for OperationalHaltAction {
 }
 
 /// Add Order – No MPID Attribution Message
-/// This message will be generated for unattributed orders accepted by the Nasdaq system. (Note: If a firm wants to display a MPID for unattributed orders, Nasdaq recommends that it use the MPID of “NSDQ”.)
-#[itch_message(tag = b'A')]
+/// This message will be generated for unattributed orders accepted by the Nasdaq system. (Note: If a firm wants to display a MPID for unattributed orders, Nasdaq recommends that it use the MPID of "NSDQ".)
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct AddOrderNoMPIDAttribution {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The unique reference number assigned to the new order at the time of receipt.
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
-    /// The type of order being added.
-    #[field(offset = 19, len = 1)]
-    buy_sell_indicator: BuySellIndicator,
-    /// The total number of shares associated with the order being added to the book.
-    #[field(offset = 20, len = 4)]
-    shares: u32,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 24, len = 8)]
-    stock: &[u8],
-    /// The display price of the new order. Refer to Data Types for field processing notes.
-    #[field(offset = 32, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+    buy_sell_indicator: u8,
+    shares: U32,
+    stock: [u8; 8],
     price: Price4,
+}
+
+impl AddOrderNoMPIDAttribution {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'A';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight.
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The unique reference number assigned to the new order at the time of receipt.
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
+    /// The type of order being added.
+    pub fn buy_sell_indicator(&self) -> BuySellIndicator {
+        BuySellIndicator::from(self.buy_sell_indicator)
+    }
+    /// The total number of shares associated with the order being added to the book.
+    pub fn shares(&self) -> u32 {
+        self.shares.get()
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// The display price of the new order. Refer to Data Types for field processing notes.
+    pub fn price(&self) -> &Price4 {
+        &self.price
+    }
 }
 
 #[repr(u8)]
@@ -845,35 +1094,61 @@ impl From<u8> for BuySellIndicator {
 
 /// Add Order - MPID Attribution Message
 /// This message will be generated for attributed orders and quotations accepted by the Nasdaq system.
-#[itch_message(tag = b'F')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct AddOrderWithMPIDAttribution {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The unique reference number assigned to the new order at the time of receipt.
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
-    /// The type of order being added.
-    #[field(offset = 19, len = 1)]
-    buy_sell_indicator: BuySellIndicator,
-    /// The total number of shares associated with the order being added to the book
-    #[field(offset = 20, len = 4)]
-    shares: u32,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 24, len = 8)]
-    stock: &[u8],
-    /// The display price of the new order. Refer to Data Types for field processing notes.
-    #[field(offset = 32, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+    buy_sell_indicator: u8,
+    shares: U32,
+    stock: [u8; 8],
     price: Price4,
+    attribution: [u8; 4],
+}
+
+impl AddOrderWithMPIDAttribution {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'F';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight.
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The unique reference number assigned to the new order at the time of receipt.
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
+    /// The type of order being added.
+    pub fn buy_sell_indicator(&self) -> BuySellIndicator {
+        BuySellIndicator::from(self.buy_sell_indicator)
+    }
+    /// The total number of shares associated with the order being added to the book
+    pub fn shares(&self) -> u32 {
+        self.shares.get()
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// The display price of the new order. Refer to Data Types for field processing notes.
+    pub fn price(&self) -> &Price4 {
+        &self.price
+    }
     /// Nasdaq Market participant identifier associated with the entered order
-    #[field(offset = 36, len = 4)]
-    attribution: &[u8],
+    pub fn attribution(&self) -> &[u8] {
+        &self.attribution
+    }
 }
 
 /// Order Executed Message
@@ -882,26 +1157,46 @@ pub struct AddOrderWithMPIDAttribution {
 /// multiple Order Executed Messages on the same order are cumulative.
 /// By combining the executions from both types of Order Executed Messages and the Trade Message, it is possible to
 /// build a complete view of all non-•-cross executions that happen on Nasdaq. Cross execution information is available in one bulk print per symbol via the Cross Trade Message.
-#[itch_message(tag = b'E')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct OrderExecutedMessage {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+    executed_shares: U32,
+    match_number: U64,
+}
+
+impl OrderExecutedMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'E';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// The unique reference number assigned to the new order at the time of receipt
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
     /// The number of shares executed
-    #[field(offset = 19, len = 4)]
-    executed_shares: u32,
+    pub fn executed_shares(&self) -> u32 {
+        self.executed_shares.get()
+    }
     /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
-    #[field(offset = 23, len = 8)]
-    match_number: u64,
+    pub fn match_number(&self) -> u64 {
+        self.match_number.get()
+    }
 }
 
 /// Order Executed With Price Message
@@ -914,32 +1209,56 @@ pub struct OrderExecutedMessage {
 /// shares will be included into a later bulk print (e.g., in the case of cross executions). If a firm is looking to use the data
 /// in time-•-and-•-sales displays or volume calculations, Nasdaq recommends that firms ignore messages marked as non-
 /// -- printable to prevent double counting.
-#[itch_message(tag = b'C')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct OrderExecutedWithPriceMessage {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The unique reference number assigned to the new order at the time of receipt
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
-    /// The number of shares executed
-    #[field(offset = 19, len = 4)]
-    executed_shares: u32,
-    /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
-    #[field(offset = 23, len = 8)]
-    match_number: u64,
-    /// Indicates if the execution should be reflected on time and sales displays and volume calculations
-    #[field(offset = 31, len = 1)]
-    printable: Printable,
-    /// The Price at which the order execution occurred. Refer to Data Types for field processing notes
-    #[field(offset = 32, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+    executed_shares: U32,
+    match_number: U64,
+    printable: u8,
     execution_price: Price4,
+}
+
+impl OrderExecutedWithPriceMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'C';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The unique reference number assigned to the new order at the time of receipt
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
+    /// The number of shares executed
+    pub fn executed_shares(&self) -> u32 {
+        self.executed_shares.get()
+    }
+    /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
+    pub fn match_number(&self) -> u64 {
+        self.match_number.get()
+    }
+    /// Indicates if the execution should be reflected on time and sales displays and volume calculations
+    pub fn printable(&self) -> Printable {
+        Printable::from(self.printable)
+    }
+    /// The Price at which the order execution occurred. Refer to Data Types for field processing notes
+    pub fn execution_price(&self) -> &Price4 {
+        &self.execution_price
+    }
 }
 
 #[repr(u8)]
@@ -963,109 +1282,185 @@ impl From<u8> for Printable {
 
 /// Order Cancel Message
 /// This message is sent whenever an order on the book is modified as a result of a partial cancellation.
-#[itch_message(tag = b'X')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct OrderCancelMessage {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+    cancelled_shares: U32,
+}
+
+impl OrderCancelMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'X';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// The reference number of the order being canceled
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
     /// The number of shares being removed from the display size of the order as a result of a cancellation
-    #[field(offset = 19, len = 4)]
-    cancelled_shares: u32,
+    pub fn cancelled_shares(&self) -> u32 {
+        self.cancelled_shares.get()
+    }
 }
 
 /// Order Delete Message
 /// This message is sent whenever an order on the book is being cancelled. All remaining shares are no longer accessible so the order must be removed from the book.
-#[itch_message(tag = b'D')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct OrderDeleteMessage {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+}
+
+impl OrderDeleteMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'D';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// The reference number of the order being canceled
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
 }
 
 /// Order Replace Message
 /// This message is sent whenever an order on the book has been cancel-replaced. All remaining shares from the original order are no longer accessible, and must be removed. The new order details are provided for the replacement, along with a new order reference number which will be used henceforth. Since the side, stock symbol and attribution (if any) cannot be changed by an Order Replace event, these fields are not included in the message. Firms should retain the side, stock symbol and MPID from the original Add Order message.
-#[itch_message(tag = b'U')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct OrderReplaceMessage {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The original order reference number of the order being replaced
-    #[field(offset = 11, len = 8)]
-    original_order_reference_number: u64,
-    /// The new reference number for this order at time of replacement
-    /// Please note that the Nasdaq system will use this new order reference number for all subsequent updates
-    #[field(offset = 19, len = 8)]
-    new_order_reference_number: u64,
-    /// The new total displayed quantity
-    #[field(offset = 27, len = 4)]
-    shares: u32,
-    /// The new display price for the order
-    /// Please refer to Data Types for field processing notes
-    #[field(offset = 31, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    original_order_reference_number: U64,
+    new_order_reference_number: U64,
+    shares: U32,
     price: Price4,
+}
+
+impl OrderReplaceMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'U';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The original order reference number of the order being replaced
+    pub fn original_order_reference_number(&self) -> u64 {
+        self.original_order_reference_number.get()
+    }
+    /// The new reference number for this order at time of replacement
+    pub fn new_order_reference_number(&self) -> u64 {
+        self.new_order_reference_number.get()
+    }
+    /// The new total displayed quantity
+    pub fn shares(&self) -> u32 {
+        self.shares.get()
+    }
+    /// The new display price for the order
+    pub fn price(&self) -> &Price4 {
+        &self.price
+    }
 }
 
 /// Trade Message
 /// The Trade Message is designed to provide execution details for normal match events involving non-displayable order types.
 /// Since no Add Order Message is generated when a non-displayed order is initially received, Nasdaq cannot use the Order Executed messages for all matches. Therefore this message indicates when a match occurs between non-displayable order types. A Trade Message is transmitted each time a non-displayable order is executed in whole or in part. It is possible to receive multiple Trade Messages for the same order if that order is executed in several parts. Trade Messages for the same order are cumulative.
 /// Trade Messages should be included in Nasdaq time-and-sales displays as well as volume and other market statistics. Since Trade Messages do not affect the book, however, they may be ignored by firms just looking to build and track the Nasdaq execution system display.
-#[itch_message(tag = b'P')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct TradeMessage {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The unique reference number assigned to the order on the book being executed.
-    /// Effective December 6, 2010, Nasdaq will populate the Order Reference Number field within the Trade (Non- Cross) message as zero. For the binary versions of the TotalView-ITCH data feeds, the field will be null-filled bytes (which encodes sequence of zero)
-    #[field(offset = 11, len = 8)]
-    order_reference_number: u64,
-    /// The type of non-display order on the book being matched
-    /// Effective 07/14/2014, this field will always be “B” regardless of the resting side
-    #[field(offset = 19, len = 1)]
-    buy_sell_indicator: BuySellIndicator,
-    /// The number of shares being matched in this execution
-    #[field(offset = 20, len = 4)]
-    shares: u32,
-    /// Stock Symbol, right padded with spaces
-    #[field(offset = 24, len = 8)]
-    stock: &[u8],
-    /// The match price of the order
-    /// Please refer to Data Types for field processing notes
-    #[field(offset = 32, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    order_reference_number: U64,
+    buy_sell_indicator: u8,
+    shares: U32,
+    stock: [u8; 8],
     price: Price4,
+    match_number: U64,
+}
+
+impl TradeMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'P';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight.
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The unique reference number assigned to the order on the book being executed.
+    pub fn order_reference_number(&self) -> u64 {
+        self.order_reference_number.get()
+    }
+    /// The type of non-display order on the book being matched
+    pub fn buy_sell_indicator(&self) -> BuySellIndicator {
+        BuySellIndicator::from(self.buy_sell_indicator)
+    }
+    /// The number of shares being matched in this execution
+    pub fn shares(&self) -> u32 {
+        self.shares.get()
+    }
+    /// Stock Symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// The match price of the order
+    pub fn price(&self) -> &Price4 {
+        &self.price
+    }
     /// The Nasdaq generated session unique Match Number for this trade
-    /// The Match Number is referenced in the Trade Break Message
-    #[field(offset = 36, len = 8)]
-    match_number: u64,
+    pub fn match_number(&self) -> u64 {
+        self.match_number.get()
+    }
 }
 
 /// Cross Trade Message
@@ -1076,56 +1471,95 @@ pub struct TradeMessage {
 /// For most issues, the Cross Trade message will indicate the bulk volume associated with the cross event. If the order
 /// interest is insufficient to conduct a cross in a particular issue, however, the Cross Trade message may show the
 /// shares as zero.
-#[itch_message(tag = b'Q')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct CrossTradeMessage {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The number of shares matched in the Nasdaq Cross.
-    #[field(offset = 11, len = 8)]
-    shares: u64,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 19, len = 8)]
-    stock: &[u8],
-    /// The price at which the cross occurred. Refer to Data Types for field processing notes.
-    #[field(offset = 27, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    shares: U64,
+    stock: [u8; 8],
     cross_price: Price4,
+    match_number: U64,
+    cross_type: u8,
+}
+
+impl CrossTradeMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'Q';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight.
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The number of shares matched in the Nasdaq Cross.
+    pub fn shares(&self) -> u64 {
+        self.shares.get()
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// The price at which the cross occurred. Refer to Data Types for field processing notes.
+    pub fn cross_price(&self) -> &Price4 {
+        &self.cross_price
+    }
     /// The Nasdaq generated day-unique Match Number of this execution.
-    #[field(offset = 31, len = 8)]
-    match_number: u64,
+    pub fn match_number(&self) -> u64 {
+        self.match_number.get()
+    }
     /// The Nasdaq cross session for which the message is being generated.
-    #[field(offset = 39, len = 1)]
-    cross_type: CrossType,
+    pub fn cross_type(&self) -> CrossType {
+        CrossType::from(self.cross_type)
+    }
 }
 
 /// Broken Trade Message
 /// The Broken Trade Message is sent whenever an execution on Nasdaq is broken. An execution may be broken if it is
-/// found to be “clearly erroneous” pursuant to Nasdaq’s Clearly Erroneous Policy. A trade break is final; once a trade is
+/// found to be "clearly erroneous" pursuant to Nasdaq's Clearly Erroneous Policy. A trade break is final; once a trade is
 /// broken, it cannot be reinstated.
 /// Firms that use the ITCH feed to create time-and-sales displays or calculate market statistics should be prepared
 /// to process the broken trade message. If a firm is only using the ITCH feed to build a book, however, it may ignore
 /// these messages as they have no impact on the current book.
-#[itch_message(tag = b'B')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct BrokenTradeMessage {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    match_number: U64,
+}
+
+impl BrokenTradeMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'B';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The Nasdaq Match Number of the execution that was broken. This refers to a Match Number from a previously
-    /// transmitted Order Executed Message, Order Executed With Price Message, or Trade Message.
-    #[field(offset = 11, len = 8)]
-    match_number: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The Nasdaq Match Number of the execution that was broken.
+    pub fn match_number(&self) -> u64 {
+        self.match_number.get()
+    }
 }
 
 /// Net Order Imbalance Indicator (NOII) Message
@@ -1134,44 +1568,76 @@ pub struct BrokenTradeMessage {
 /// Between 9:28 and 9:30 a.m. and 3:55 and 4:00 p.m., Nasdaq disseminates the NOII information every second.
 /// For Nasdaq Halt, IPO and Pauses, NOII messages will be disseminated at 1 second intervals starting 1 second after quoting period starts/trading action is released.
 /// Nasdaq will also disseminate an Extended Trading Close (ETC) message from 4:00 p.m. to 4:05 p.m. at five second intervals.
-#[itch_message(tag = b'I')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct NetOrderImbalanceIndicatorMessage {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// The total number of shares that are eligible to be matched at the Current Reference Price.
-    #[field(offset = 11, len = 8)]
-    paired_shares: u64,
-    /// The number of shares not paired at the Current Reference Price.
-    #[field(offset = 19, len = 8)]
-    imbalance_shares: u64,
-    /// The market side of the order imbalance.
-    #[field(offset = 27, len = 1)]
-    imbalance_direction: ImbalanceDirection,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 28, len = 8)]
-    stock: &[u8],
-    /// A hypothetical auction-clearing price for cross orders only. Refer to Data Types for field processing notes.
-    #[field(offset = 36, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    paired_shares: U64,
+    imbalance_shares: U64,
+    imbalance_direction: u8,
+    stock: [u8; 8],
     far_price: Price4,
-    /// A hypothetical auction-clearing price for cross orders as well as continuous orders. Refer to Data Types for field processing notes.
-    #[field(offset = 40, len = 4)]
     near_price: Price4,
-    /// The price at which the NOII shares are being calculated. Refer to Data Types for field processing notes.
-    #[field(offset = 44, len = 4)]
     current_reference_price: Price4,
+    cross_type: u8,
+    price_variation_indicator: u8,
+}
+
+impl NetOrderImbalanceIndicatorMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'I';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight.
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// The total number of shares that are eligible to be matched at the Current Reference Price.
+    pub fn paired_shares(&self) -> u64 {
+        self.paired_shares.get()
+    }
+    /// The number of shares not paired at the Current Reference Price.
+    pub fn imbalance_shares(&self) -> u64 {
+        self.imbalance_shares.get()
+    }
+    /// The market side of the order imbalance.
+    pub fn imbalance_direction(&self) -> ImbalanceDirection {
+        ImbalanceDirection::from(self.imbalance_direction)
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// A hypothetical auction-clearing price for cross orders only.
+    pub fn far_price(&self) -> &Price4 {
+        &self.far_price
+    }
+    /// A hypothetical auction-clearing price for cross orders as well as continuous orders.
+    pub fn near_price(&self) -> &Price4 {
+        &self.near_price
+    }
+    /// The price at which the NOII shares are being calculated.
+    pub fn current_reference_price(&self) -> &Price4 {
+        &self.current_reference_price
+    }
     /// The type of Nasdaq cross for which the NOII message is being generated
-    #[field(offset = 48, len = 1)]
-    cross_type: CrossType,
+    pub fn cross_type(&self) -> CrossType {
+        CrossType::from(self.cross_type)
+    }
     /// This field indicates the absolute value of the percentage of deviation of the Near Indicative Clearing Price to the nearest Current Reference Price.
-    #[field(offset = 49, len = 1)]
-    price_variation_indicator: PriceVariationIndicator,
+    pub fn price_variation_indicator(&self) -> PriceVariationIndicator {
+        PriceVariationIndicator::from(self.price_variation_indicator)
+    }
 }
 
 #[repr(u8)]
@@ -1284,23 +1750,41 @@ impl From<u8> for PriceVariationIndicator {
 
 /// Retail Price Improvement Indicator (RPII)
 /// Identifies a retail interest indication of the Bid, Ask or both the Bid and Ask for Nasdaq-listed securities.
-#[itch_message(tag = b'N')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct RetailPriceImprovementIndicator {
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    interest_flag: u8,
+}
+
+impl RetailPriceImprovementIndicator {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'N';
+
     /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
     /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
     /// Nanoseconds since midnight.
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
     /// Stock symbol, right padded with spaces
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
     /// Interest Flag
-    #[field(offset = 19, len = 1)]
-    interest_flag: InterestFlag,
+    pub fn interest_flag(&self) -> InterestFlag {
+        InterestFlag::from(self.interest_flag)
+    }
 }
 
 #[repr(u8)]
@@ -1331,41 +1815,71 @@ impl From<u8> for InterestFlag {
 /// Direct Listing with Capital Raise Price Discovery Message
 /// The following message is disseminated only for Direct Listing with Capital Raise (DLCR) securities. Nasdaq begins
 /// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
-#[itch_message(tag = b'O')]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C, packed)]
 pub struct DirectListingwithCapitalRaisePriceDiscoveryMessage {
-    /// Locate code identifying the security
-    #[field(offset = 1, len = 2)]
-    stock_locate: u16,
-    /// Nasdaq internal tracking number
-    #[field(offset = 3, len = 2)]
-    tracking_number: u16,
-    /// Nanoseconds since midnight
-    #[field(offset = 5, len = 6)]
-    timestamp: u64,
-    /// Stock symbol, right padded with spaces
-    #[field(offset = 11, len = 8)]
-    stock: &[u8],
-    /// Indicates if the security is eligible to be released for trading
-    #[field(offset = 19, len = 1)]
-    open_eligibility_status: OpenEligibilityStatus,
-    /// 20% below Registration Statement Lower Price
-    #[field(offset = 20, len = 4)]
+    tag: u8,
+    stock_locate: U16,
+    tracking_number: U16,
+    timestamp: [u8; 6],
+    stock: [u8; 8],
+    open_eligibility_status: u8,
     minimum_allowable_price: Price4,
-    /// 80% above Registration Statement Highest Price
-    #[field(offset = 24, len = 4)]
     maximum_allowable_price: Price4,
-    /// The current reference price when the DLCR volatility test has successfully passed
-    #[field(offset = 28, len = 4)]
     near_execution_price: Price4,
-    /// The time at which the near execution price was set
-    #[field(offset = 32, len = 8)]
-    near_execution_time: u64,
-    /// Indicates the price of the Lower Auction Collar Threshold (10% below the Near Execution Price)
-    #[field(offset = 40, len = 4)]
+    near_execution_time: U64,
     lower_price_range_collar: Price4,
-    /// Indicates the price of the Upper Auction Collar Threshold (10% above the Near Execution Price)
-    #[field(offset = 44, len = 4)]
     upper_price_range_collar: Price4,
+}
+
+impl DirectListingwithCapitalRaisePriceDiscoveryMessage {
+    pub const LEN: usize = size_of::<Self>();
+    pub const TAG: u8 = b'O';
+
+    /// Locate code identifying the security
+    pub fn stock_locate(&self) -> u16 {
+        self.stock_locate.get()
+    }
+    /// Nasdaq internal tracking number
+    pub fn tracking_number(&self) -> u16 {
+        self.tracking_number.get()
+    }
+    /// Nanoseconds since midnight
+    pub fn timestamp(&self) -> u64 {
+        read_u48(&self.timestamp)
+    }
+    /// Stock symbol, right padded with spaces
+    pub fn stock(&self) -> &[u8] {
+        &self.stock
+    }
+    /// Indicates if the security is eligible to be released for trading
+    pub fn open_eligibility_status(&self) -> OpenEligibilityStatus {
+        OpenEligibilityStatus::from(self.open_eligibility_status)
+    }
+    /// 20% below Registration Statement Lower Price
+    pub fn minimum_allowable_price(&self) -> &Price4 {
+        &self.minimum_allowable_price
+    }
+    /// 80% above Registration Statement Highest Price
+    pub fn maximum_allowable_price(&self) -> &Price4 {
+        &self.maximum_allowable_price
+    }
+    /// The current reference price when the DLCR volatility test has successfully passed
+    pub fn near_execution_price(&self) -> &Price4 {
+        &self.near_execution_price
+    }
+    /// The time at which the near execution price was set
+    pub fn near_execution_time(&self) -> u64 {
+        self.near_execution_time.get()
+    }
+    /// Indicates the price of the Lower Auction Collar Threshold (10% below the Near Execution Price)
+    pub fn lower_price_range_collar(&self) -> &Price4 {
+        &self.lower_price_range_collar
+    }
+    /// Indicates the price of the Upper Auction Collar Threshold (10% above the Near Execution Price)
+    pub fn upper_price_range_collar(&self) -> &Price4 {
+        &self.upper_price_range_collar
+    }
 }
 
 #[repr(u8)]
