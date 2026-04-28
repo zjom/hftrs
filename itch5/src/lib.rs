@@ -1,16 +1,16 @@
 use itch5_derive::itch_message;
 
-pub enum MessageKind {
+pub enum MessageKind<'a> {
     /// System Event Message
     /// The system event message type is used to signal a market or data feed handler event.
-    SystemEventMessage,
+    SystemEventMessage(SystemEventMessage<'a>),
 
     /// Stock Directory
     /// At the start of each trading day, Nasdaq disseminates stock directory messages for all active symbols in the Nasdaq
     /// execution system.
     /// Market data redistributors should process this message to populate the Financial Status Indicator (required display
     /// field) and the Market Category (recommended display field) for Nasdaq listed issues.
-    StockDirectory,
+    StockDirectory(StockDirectory<'a>),
 
     /// Stock Trading Action
     /// Nasdaq uses this administrative message to indicate the current trading status of a security to the trading
@@ -29,7 +29,7 @@ pub enum MessageKind {
     /// • Released for trading
     /// * The paused status will be disseminated for NASDAQ---listed securities only. Trading pauses on non---NASDAQ listed securities
     /// will be treated simply as a halt.
-    StockTradingAction,
+    StockTradingAction(StockTradingAction<'a>),
 
     /// Reg SHO Short Sale Price Test Restricted Indicator
     /// In February 2011, the Securities and Exchange Commission (SEC) implemented changes to Rule 201 of the
@@ -42,7 +42,7 @@ pub enum MessageKind {
     /// For other exchange-•-listed issues, Nasdaq relays the Reg SHO Short Sale Price Test Restricted Indicator
     /// message when it receives an update from the primary listing exchange.
     /// Nasdaq processes orders based on the most Reg SHO Restriction status value.
-    RegSHORestriction,
+    RegSHORestriction(RegSHORestriction<'a>),
 
     /// Market Participant Position
     /// At the start of each trading day, Nasdaq disseminates a spin of market participant position messages. The
@@ -51,22 +51,22 @@ pub enum MessageKind {
     /// comply with certain marketplace rules.
     /// Throughout the day, Nasdaq will send out this message only if Nasdaq Operations changes the status of a
     /// market participant firm in an issue.
-    MarketParticipantPosition,
+    MarketParticipantPosition(MarketParticipantPosition<'a>),
 
     /// Market-Wide Circuit Breaker (MWCB) Decline Level Message
     /// Informs data recipients what the daily MWCB breach points are set to for the current trading day.
-    MWCBDeclineLevelMessage,
+    MWCBDeclineLevelMessage(MWCBDeclineLevelMessage<'a>),
 
     /// Market-Wide Circuit Breaker (MWCB) Status Message
     /// Informs data recipients when a MWCB has breached one of the established levels
-    MWCBStatusMessage,
+    MWCBStatusMessage(MWCBStatusMessage<'a>),
 
     /// Indicates the anticipated IPO quotation release time of a security.
-    QuotingPeriodUpdate,
+    QuotingPeriodUpdate(QuotingPeriodUpdate<'a>),
 
     /// Limit Up – Limit Down (LULD) Auction Collar
     /// Indicates the auction collar thresholds within which a paused security can reopen following a LULD Trading Pause.
-    LULDAuctionCollar,
+    LULDAuctionCollar(LULDAuctionCollar<'a>),
 
     /// The Exchange uses this message to indicate the current Operational Status of a security to the trading
     /// community. An Operational Halt means that there has been an interruption of service on the identified
@@ -76,15 +76,15 @@ pub enum MessageKind {
     /// marketplace.
     /// Nasdaq uses this administrative message to indicate the current trading status of the three market centers
     /// operated by Nasdaq.
-    OperationalHalt,
+    OperationalHalt(OperationalHalt<'a>),
 
     /// Add Order - No MPID Attribution
     /// This message will be generated for unattributed orders accepted by the Nasdaq system. (Note: If a firm wants to
     /// display a MPID for unattributed orders, Nasdaq recommends that it use the MPID of “NSDQ”.)
-    AddOrderNoMPIDAttribution,
+    AddOrderNoMPIDAttribution(AddOrderNoMPIDAttribution<'a>),
 
     /// This message will be generated for attributed orders and quotations accepted by the Nasdaq system.
-    AddOrderWithMPIDAttribution,
+    AddOrderWithMPIDAttribution(AddOrderWithMPIDAttribution<'a>),
 
     /// Order Executed Message
     /// This message is sent whenever an order on the book is executed in whole or in part. It is possible to receive several
@@ -93,7 +93,7 @@ pub enum MessageKind {
     /// By combining the executions from both types of Order Executed Messages and the Trade Message, it is possible to
     /// build a complete view of all non-•-cross executions that happen on Nasdaq. Cross execution information is available in
     /// one bulk print per symbol via the Cross Trade Message.
-    OrderExecutedMessage,
+    OrderExecutedMessage(OrderExecutedMessage<'a>),
 
     /// Order Executed With Price Message
     /// This message is sent whenever an order on the book is executed in whole or in part at a price different from the
@@ -105,16 +105,16 @@ pub enum MessageKind {
     /// shares will be included into a later bulk print (e.g., in the case of cross executions). If a firm is looking to use the data
     /// in time-•-and-•-sales displays or volume calculations, Nasdaq recommends that firms ignore messages marked as non-
     /// -- printable to prevent double counting.
-    OrderExecutedWithPriceMessage,
+    OrderExecutedWithPriceMessage(OrderExecutedWithPriceMessage<'a>),
 
     /// Order Cancel Message
     /// This message is sent whenever an order on the book is modified as a result of a partial cancellation.
-    OrderCancelMessage,
+    OrderCancelMessage(OrderCancelMessage<'a>),
 
     /// Order Delete Message
     /// This message is sent whenever an order on the book is being cancelled. All remaining shares are no longer
     /// accessible so the order must be removed from the book.
-    OrderDeleteMessage,
+    OrderDeleteMessage(OrderDeleteMessage<'a>),
 
     /// Order Replace Message
     /// This message is sent whenever an order on the book has been cancel-•-replaced. All remaining shares from the
@@ -122,7 +122,7 @@ pub enum MessageKind {
     /// replacement, along with a new order reference number which will be used henceforth. Since the side, stock
     /// symbol and attribution (if any) cannot be changed by an Order Replace event, these fields are not included in the
     /// message. Firms should retain the side, stock symbol and MPID from the original Add Order message.
-    OrderReplaceMessage,
+    OrderReplaceMessage(OrderReplaceMessage<'a>),
 
     /// Trade Message (Non-Cross)
     /// The Trade Message is designed to provide execution details for normal match events involving non-•-displayable
@@ -135,7 +135,7 @@ pub enum MessageKind {
     /// Trade Messages should be included in Nasdaq time-•-and-•-sales displays as well as volume and other market
     /// statistics. Since Trade Messages do not affect the book, however, they may be ignored by firms just looking to build
     /// and track the Nasdaq execution system display.
-    TradeMessage,
+    TradeMessage(TradeMessage<'a>),
 
     /// Cross Trade message indicates that Nasdaq has completed its cross process for a specific security. Nasdaq sends out
     /// a Cross Trade message for all active issues in the system following the Opening, Closing and EMC cross events. Firms
@@ -147,7 +147,7 @@ pub enum MessageKind {
     /// shares as zero.
     /// To avoid double counting of cross volume, firms should not include transactions marked as non-•-printable in time---
     /// and-•-sales displays or market statistic calculations.
-    CrossTradeMessage,
+    CrossTradeMessage(CrossTradeMessage<'a>),
 
     /// Broken Trade / Order Execution Message
     /// The Broken Trade Message is sent whenever an execution on Nasdaq is broken. An execution may be broken if it is
@@ -156,7 +156,7 @@ pub enum MessageKind {
     /// Firms that use the ITCH feed to create time---and---sales displays or calculate market statistics should be prepared
     /// to process the broken trade message. If a firm is only using the ITCH feed to build a book, however, it may ignore
     /// these messages as they have no impact on the current book.
-    BrokenTradeMessage,
+    BrokenTradeMessage(BrokenTradeMessage<'a>),
 
     /// Net Order Imbalance Indicator (NOII) Message
     /// • Nasdaq begins disseminating Net Order Imbalance Indicators (NOII) at 9:25 a.m. for the Opening Cross and
@@ -171,16 +171,110 @@ pub enum MessageKind {
     /// • Nasdaq will also disseminate an Extended Trading Close (ETC) message from 4:00 p.m. to 4:05 p.m. at five
     /// second intervals.
     /// • For more information, please see the FAQ on Extended Trading Close.
-    NetOrderImbalanceIndicatorMessage,
+    NetOrderImbalanceIndicatorMessage(NetOrderImbalanceIndicatorMessage<'a>),
 
     /// Retail Price Improvement Indicator (RPII)
     /// Identifies a retail interest indication of the Bid, Ask or both the Bid and Ask for Nasdaq-•-listed securities.
-    RetailPriceImprovementIndicator,
+    RetailPriceImprovementIndicator(RetailPriceImprovementIndicator<'a>),
 
     /// Direct Listing with Capital Raise Price Discovery Message
     /// The following message is disseminated only for Direct Listing with Capital Raise (DLCR) securities. Nasdaq begins
     /// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
-    DirectListingwithCapitalRaisePriceDiscoveryMessage,
+    DirectListingwithCapitalRaisePriceDiscoveryMessage(
+        DirectListingwithCapitalRaisePriceDiscoveryMessage<'a>,
+    ),
+}
+
+pub fn parse<'a>(buf: &'a [u8]) -> (Option<MessageKind<'a>>, &'a [u8]) {
+    match buf[0] {
+        b'S' => (
+            SystemEventMessage::parse(buf),
+            buf.split_at(SystemEventMessage::LEN).1,
+        ),
+        b'H' => (
+            StockTradingAction::parse(buf),
+            buf.split_at(StockTradingAction::LEN).1,
+        ),
+        b'Y' => (
+            RegSHORestriction::parse(buf),
+            buf.split_at(RegSHORestriction::LEN).1,
+        ),
+        b'L' => (
+            MarketParticipantPosition::parse(buf),
+            buf.split_at(MarketParticipantPosition::LEN).1,
+        ),
+        b'V' => (
+            MWCBDeclineLevelMessage::parse(buf),
+            buf.split_at(MWCBDeclineLevelMessage::LEN).1,
+        ),
+        b'W' => (
+            MWCBStatusMessage::parse(buf),
+            buf.split_at(MWCBStatusMessage::LEN).1,
+        ),
+        b'K' => (
+            QuotingPeriodUpdate::parse(buf),
+            buf.split_at(QuotingPeriodUpdate::LEN).1,
+        ),
+        b'J' => (
+            LULDAuctionCollar::parse(buf),
+            buf.split_at(LULDAuctionCollar::LEN).1,
+        ),
+        b'h' => (
+            OperationalHalt::parse(buf),
+            buf.split_at(OperationalHalt::LEN).1,
+        ),
+        b'A' => (
+            AddOrderNoMPIDAttribution::parse(buf),
+            buf.split_at(AddOrderNoMPIDAttribution::LEN).1,
+        ),
+        b'F' => (
+            AddOrderWithMPIDAttribution::parse(buf),
+            buf.split_at(AddOrderWithMPIDAttribution::LEN).1,
+        ),
+        b'E' => (
+            OrderExecutedMessage::parse(buf),
+            buf.split_at(OrderExecutedMessage::LEN).1,
+        ),
+        b'C' => (
+            OrderExecutedWithPriceMessage::parse(buf),
+            buf.split_at(OrderExecutedWithPriceMessage::LEN).1,
+        ),
+        b'X' => (
+            OrderCancelMessage::parse(buf),
+            buf.split_at(OrderCancelMessage::LEN).1,
+        ),
+        b'D' => (
+            OrderDeleteMessage::parse(buf),
+            buf.split_at(OrderDeleteMessage::LEN).1,
+        ),
+        b'U' => (
+            OrderReplaceMessage::parse(buf),
+            buf.split_at(OrderReplaceMessage::LEN).1,
+        ),
+        b'P' => (TradeMessage::parse(buf), buf.split_at(TradeMessage::LEN).1),
+        b'Q' => (
+            CrossTradeMessage::parse(buf),
+            buf.split_at(CrossTradeMessage::LEN).1,
+        ),
+        b'B' => (
+            BrokenTradeMessage::parse(buf),
+            buf.split_at(BrokenTradeMessage::LEN).1,
+        ),
+        b'I' => (
+            NetOrderImbalanceIndicatorMessage::parse(buf),
+            buf.split_at(NetOrderImbalanceIndicatorMessage::LEN).1,
+        ),
+        b'N' => (
+            RetailPriceImprovementIndicator::parse(buf),
+            buf.split_at(RetailPriceImprovementIndicator::LEN).1,
+        ),
+        b'O' => (
+            DirectListingwithCapitalRaisePriceDiscoveryMessage::parse(buf),
+            buf.split_at(DirectListingwithCapitalRaisePriceDiscoveryMessage::LEN)
+                .1,
+        ),
+        _ => (None, buf),
+    }
 }
 
 /// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
@@ -614,7 +708,7 @@ impl From<u8> for TradingState {
 /// message when it receives an update from the primary listing exchange.
 /// Nasdaq processes orders based on the most Reg SHO Restriction status value.
 #[itch_message(tag = b'Y')]
-pub struct RegShoRestriction {
+pub struct RegSHORestriction {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     locate_code: u16,
@@ -766,7 +860,7 @@ impl From<u8> for MarketParticipantState {
 
 /// Market wide circuit breaker Decline Level Message
 #[itch_message(tag = b'V')]
-pub struct MwcbDeclineLevel {
+pub struct MWCBDeclineLevelMessage {
     /// Always set to 0
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -789,7 +883,7 @@ pub struct MwcbDeclineLevel {
 
 /// Market-Wide Circuit Breaker Status message
 #[itch_message(tag = b'W')]
-pub struct MwcbStatus {
+pub struct MWCBStatusMessage {
     /// Always set to 0
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -829,7 +923,7 @@ impl From<u8> for BreachedLevel {
 /// IPO Quoting Period Update Message
 /// Indicates the anticipated IPO quotation release time of a security.
 #[itch_message(tag = b'K')]
-pub struct IpoQuotingPeriodUpdate {
+pub struct QuotingPeriodUpdate {
     /// Always set to 0
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -877,7 +971,7 @@ impl From<u8> for IpoQuotationReleaseQualifier {
 /// Limit Up – Limit Down (LULD) Auction Collar
 /// Indicates the auction collar thresholds within which a paused security can reopen following a LULD Trading pause.
 #[itch_message(tag = b'J')]
-pub struct LuldAuctionCollar {
+pub struct LULDAuctionCollar {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -979,7 +1073,7 @@ impl From<u8> for OperationalHaltAction {
 /// Add Order – No MPID Attribution Message
 /// This message will be generated for unattributed orders accepted by the Nasdaq system. (Note: If a firm wants to display a MPID for unattributed orders, Nasdaq recommends that it use the MPID of “NSDQ”.)
 #[itch_message(tag = b'A')]
-pub struct AddOrderNoMpidAttribution {
+pub struct AddOrderNoMPIDAttribution {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1028,7 +1122,7 @@ impl From<u8> for BuySellIndicator {
 /// Add Order - MPID Attribution Message
 /// This message will be generated for attributed orders and quotations accepted by the Nasdaq system.
 #[itch_message(tag = b'F')]
-pub struct AddOrderMpidAttribution {
+pub struct AddOrderWithMPIDAttribution {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1065,7 +1159,7 @@ pub struct AddOrderMpidAttribution {
 /// By combining the executions from both types of Order Executed Messages and the Trade Message, it is possible to
 /// build a complete view of all non-•-cross executions that happen on Nasdaq. Cross execution information is available in one bulk print per symbol via the Cross Trade Message.
 #[itch_message(tag = b'E')]
-pub struct OrderExecuted {
+pub struct OrderExecutedMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1097,7 +1191,7 @@ pub struct OrderExecuted {
 /// in time-•-and-•-sales displays or volume calculations, Nasdaq recommends that firms ignore messages marked as non-
 /// -- printable to prevent double counting.
 #[itch_message(tag = b'C')]
-pub struct OrderExecutedWithPrice {
+pub struct OrderExecutedWithPriceMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1146,7 +1240,7 @@ impl From<u8> for Printable {
 /// Order Cancel Message
 /// This message is sent whenever an order on the book is modified as a result of a partial cancellation.
 #[itch_message(tag = b'X')]
-pub struct OrderCancel {
+pub struct OrderCancelMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1167,7 +1261,7 @@ pub struct OrderCancel {
 /// Order Delete Message
 /// This message is sent whenever an order on the book is being cancelled. All remaining shares are no longer accessible so the order must be removed from the book.
 #[itch_message(tag = b'D')]
-pub struct OrderDelete {
+pub struct OrderDeleteMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1185,7 +1279,7 @@ pub struct OrderDelete {
 /// Order Replace Message
 /// This message is sent whenever an order on the book has been cancel-replaced. All remaining shares from the original order are no longer accessible, and must be removed. The new order details are provided for the replacement, along with a new order reference number which will be used henceforth. Since the side, stock symbol and attribution (if any) cannot be changed by an Order Replace event, these fields are not included in the message. Firms should retain the side, stock symbol and MPID from the original Add Order message.
 #[itch_message(tag = b'U')]
-pub struct OrderReplace {
+pub struct OrderReplaceMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1216,7 +1310,7 @@ pub struct OrderReplace {
 /// Since no Add Order Message is generated when a non-displayed order is initially received, Nasdaq cannot use the Order Executed messages for all matches. Therefore this message indicates when a match occurs between non-displayable order types. A Trade Message is transmitted each time a non-displayable order is executed in whole or in part. It is possible to receive multiple Trade Messages for the same order if that order is executed in several parts. Trade Messages for the same order are cumulative.
 /// Trade Messages should be included in Nasdaq time-and-sales displays as well as volume and other market statistics. Since Trade Messages do not affect the book, however, they may be ignored by firms just looking to build and track the Nasdaq execution system display.
 #[itch_message(tag = b'P')]
-pub struct Trade {
+pub struct TradeMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1259,7 +1353,7 @@ pub struct Trade {
 /// interest is insufficient to conduct a cross in a particular issue, however, the Cross Trade message may show the
 /// shares as zero.
 #[itch_message(tag = b'Q')]
-pub struct CrossTrade {
+pub struct CrossTradeMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1294,7 +1388,7 @@ pub struct CrossTrade {
 /// to process the broken trade message. If a firm is only using the ITCH feed to build a book, however, it may ignore
 /// these messages as they have no impact on the current book.
 #[itch_message(tag = b'B')]
-pub struct BrokenTrade {
+pub struct BrokenTradeMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1317,7 +1411,7 @@ pub struct BrokenTrade {
 /// For Nasdaq Halt, IPO and Pauses, NOII messages will be disseminated at 1 second intervals starting 1 second after quoting period starts/trading action is released.
 /// Nasdaq will also disseminate an Extended Trading Close (ETC) message from 4:00 p.m. to 4:05 p.m. at five second intervals.
 #[itch_message(tag = b'I')]
-pub struct NetOrderImbalanceIndicator {
+pub struct NetOrderImbalanceIndicatorMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
@@ -1514,7 +1608,7 @@ impl From<u8> for InterestFlag {
 /// The following message is disseminated only for Direct Listing with Capital Raise (DLCR) securities. Nasdaq begins
 /// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
 #[itch_message(tag = b'O')]
-pub struct DirectListingWithCapitalRaise {
+pub struct DirectListingwithCapitalRaisePriceDiscoveryMessage {
     /// Locate code identifying the security
     #[field(offset = 1, len = 2)]
     stock_locate: u16,
