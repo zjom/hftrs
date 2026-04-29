@@ -1,5 +1,5 @@
 use zerocopy::{
-    FromBytes, Immutable, KnownLayout, Unaligned,
+    FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
     network_endian::{U16, U32, U64},
 };
 
@@ -13,7 +13,7 @@ fn read_u48(bytes: &[u8; 6]) -> u64 {
 /// fixed point format, where the precision defines the number of decimal places. For example, a field flagged as Price
 /// (4) has an implied 4 decimal places. The maximum value of price (4) in TotalView ITCH is 200,000.0000 (decimal,
 /// 77359400 hex).
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct Price4([u8; 4]);
 
@@ -29,7 +29,7 @@ impl Price4 {
 
 /// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
 /// fixed point format, where the precision defines the number of decimal places.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct Price8([u8; 8]);
 
@@ -51,7 +51,7 @@ impl Price8 {
 /// Tracking Number 3 2 Integer Nasdaq internal tracking number
 /// Timestamp 5 6 Integer Nanoseconds since midnight
 /// Event Code 11 1 Alpha See System Event Codes below
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct SystemEventMessage {
     tag: u8,
@@ -91,6 +91,7 @@ impl SystemEventMessage {
 /// "E" End of System hours. It indicates that Nasdaq is now closed and will not accept any new orders today.
 /// It is still possible to receive Broken Trade messages and Order Delete messages after the End of Day
 /// ."C" End of Messages. This is always the last message sent in any trading day.
+#[derive(Debug)]
 #[repr(u8)]
 pub enum SystemEventCode {
     StartOfMessages = b'O',
@@ -126,7 +127,7 @@ impl From<u8> for SystemEventCode {
 /// At the start of each trading day, Nasdaq disseminates stock directory messages for all active symbols in the Nasdaq
 /// execution system.
 /// Market data redistributors should process this message to populate the Financial Status Indicator (required display field) and the Market Category (recommended display field) for Nasdaq listed issues.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct StockDirectory {
     tag: u8,
@@ -223,6 +224,7 @@ impl StockDirectory {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum MarketCategory {
     NasdaqGlobalSelectMarket = b'Q',
@@ -254,6 +256,7 @@ impl From<u8> for MarketCategory {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum FinancialStatusIndicator {
     Deficient = b'D',
@@ -287,6 +290,7 @@ impl From<u8> for FinancialStatusIndicator {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum RoundLotsOnly {
     Yes = b'Y',
@@ -321,6 +325,7 @@ impl From<u8> for Authenticity {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum ShortSaleThresholdIndicator {
     Restricted = b'Y',
@@ -340,6 +345,7 @@ impl From<u8> for ShortSaleThresholdIndicator {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum IpoFlag {
     NewIPO = b'Y',
@@ -359,6 +365,7 @@ impl From<u8> for IpoFlag {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum LuldReferencePriceTier {
     Tier1 = b'1',
@@ -378,6 +385,7 @@ impl From<u8> for LuldReferencePriceTier {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum EtpFlag {
     IsETP = b'Y',
@@ -397,6 +405,7 @@ impl From<u8> for EtpFlag {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum InverseIndicator {
     Inverse = b'Y',
@@ -431,7 +440,7 @@ impl From<u8> for InverseIndicator {
 /// • Released for trading
 /// * The paused status will be disseminated for NASDAQ---listed securities only. Trading pauses on non---NASDAQ listed securities
 /// will be treated simply as a halt.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct StockTradingAction {
     tag: u8,
@@ -478,6 +487,7 @@ impl StockTradingAction {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum TradingState {
     /// Halted across all U.S. equity markets / SROs
@@ -514,7 +524,7 @@ impl From<u8> for TradingState {
 /// For other exchange-•-listed issues, Nasdaq relays the Reg SHO Short Sale Price Test Restricted Indicator
 /// message when it receives an update from the primary listing exchange.
 /// Nasdaq processes orders based on the most Reg SHO Restriction status value.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct RegSHORestriction {
     tag: u8,
@@ -551,6 +561,7 @@ impl RegSHORestriction {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum RegShoAction {
     /// No price test in place
@@ -580,7 +591,7 @@ impl From<u8> for RegShoAction {
 /// comply with certain marketplace rules.
 /// Throughout the day, Nasdaq will send out this message only if Nasdaq Operations changes the status of a
 /// market participant firm in an issue.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct MarketParticipantPosition {
     tag: u8,
@@ -632,6 +643,7 @@ impl MarketParticipantPosition {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum PrimaryMarketMaker {
     /// primary market maker
@@ -679,6 +691,7 @@ impl From<u8> for MarketMakerMode {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum MarketParticipantState {
     /// Active
@@ -708,7 +721,7 @@ impl From<u8> for MarketParticipantState {
 }
 
 /// Market wide circuit breaker Decline Level Message
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct MWCBDeclineLevelMessage {
     tag: u8,
@@ -751,7 +764,7 @@ impl MWCBDeclineLevelMessage {
 }
 
 /// Market-Wide Circuit Breaker Status message
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct MWCBStatusMessage {
     tag: u8,
@@ -783,6 +796,7 @@ impl MWCBStatusMessage {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum BreachedLevel {
     /// Level 1
@@ -807,7 +821,7 @@ impl From<u8> for BreachedLevel {
 
 /// IPO Quoting Period Update Message
 /// Indicates the anticipated IPO quotation release time of a security.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct QuotingPeriodUpdate {
     tag: u8,
@@ -854,6 +868,7 @@ impl QuotingPeriodUpdate {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum IpoQuotationReleaseQualifier {
     /// Anticipated Quotation Release Time: This value would be used when Nasdaq Market Operations initially enters the IPO instrument for release
@@ -875,7 +890,7 @@ impl From<u8> for IpoQuotationReleaseQualifier {
 
 /// Limit Up – Limit Down (LULD) Auction Collar
 /// Indicates the auction collar thresholds within which a paused security can reopen following a LULD Trading pause.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct LULDAuctionCollar {
     tag: u8,
@@ -936,7 +951,7 @@ impl LULDAuctionCollar {
 /// marketplace.
 /// Nasdaq uses this administrative message to indicate the current trading status of the three market centers
 /// operated by Nasdaq.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct OperationalHalt {
     tag: u8,
@@ -978,6 +993,7 @@ impl OperationalHalt {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum MarketCode {
     /// Nasdaq
@@ -1000,6 +1016,7 @@ impl From<u8> for MarketCode {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum OperationalHaltAction {
     /// Operationally Halted on the identified Market
@@ -1021,7 +1038,7 @@ impl From<u8> for OperationalHaltAction {
 
 /// Add Order – No MPID Attribution Message
 /// This message will be generated for unattributed orders accepted by the Nasdaq system. (Note: If a firm wants to display a MPID for unattributed orders, Nasdaq recommends that it use the MPID of "NSDQ".)
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct AddOrderNoMPIDAttribution {
     tag: u8,
@@ -1073,6 +1090,7 @@ impl AddOrderNoMPIDAttribution {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum BuySellIndicator {
     /// Buy Order
@@ -1094,7 +1112,7 @@ impl From<u8> for BuySellIndicator {
 
 /// Add Order - MPID Attribution Message
 /// This message will be generated for attributed orders and quotations accepted by the Nasdaq system.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct AddOrderWithMPIDAttribution {
     tag: u8,
@@ -1157,7 +1175,7 @@ impl AddOrderWithMPIDAttribution {
 /// multiple Order Executed Messages on the same order are cumulative.
 /// By combining the executions from both types of Order Executed Messages and the Trade Message, it is possible to
 /// build a complete view of all non-•-cross executions that happen on Nasdaq. Cross execution information is available in one bulk print per symbol via the Cross Trade Message.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct OrderExecutedMessage {
     tag: u8,
@@ -1209,7 +1227,7 @@ impl OrderExecutedMessage {
 /// shares will be included into a later bulk print (e.g., in the case of cross executions). If a firm is looking to use the data
 /// in time-•-and-•-sales displays or volume calculations, Nasdaq recommends that firms ignore messages marked as non-
 /// -- printable to prevent double counting.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct OrderExecutedWithPriceMessage {
     tag: u8,
@@ -1261,6 +1279,7 @@ impl OrderExecutedWithPriceMessage {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum Printable {
     /// Non-Printable
@@ -1282,7 +1301,7 @@ impl From<u8> for Printable {
 
 /// Order Cancel Message
 /// This message is sent whenever an order on the book is modified as a result of a partial cancellation.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct OrderCancelMessage {
     tag: u8,
@@ -1321,7 +1340,7 @@ impl OrderCancelMessage {
 
 /// Order Delete Message
 /// This message is sent whenever an order on the book is being cancelled. All remaining shares are no longer accessible so the order must be removed from the book.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct OrderDeleteMessage {
     tag: u8,
@@ -1355,7 +1374,7 @@ impl OrderDeleteMessage {
 
 /// Order Replace Message
 /// This message is sent whenever an order on the book has been cancel-replaced. All remaining shares from the original order are no longer accessible, and must be removed. The new order details are provided for the replacement, along with a new order reference number which will be used henceforth. Since the side, stock symbol and attribution (if any) cannot be changed by an Order Replace event, these fields are not included in the message. Firms should retain the side, stock symbol and MPID from the original Add Order message.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct OrderReplaceMessage {
     tag: u8,
@@ -1406,7 +1425,7 @@ impl OrderReplaceMessage {
 /// The Trade Message is designed to provide execution details for normal match events involving non-displayable order types.
 /// Since no Add Order Message is generated when a non-displayed order is initially received, Nasdaq cannot use the Order Executed messages for all matches. Therefore this message indicates when a match occurs between non-displayable order types. A Trade Message is transmitted each time a non-displayable order is executed in whole or in part. It is possible to receive multiple Trade Messages for the same order if that order is executed in several parts. Trade Messages for the same order are cumulative.
 /// Trade Messages should be included in Nasdaq time-and-sales displays as well as volume and other market statistics. Since Trade Messages do not affect the book, however, they may be ignored by firms just looking to build and track the Nasdaq execution system display.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct TradeMessage {
     tag: u8,
@@ -1471,7 +1490,7 @@ impl TradeMessage {
 /// For most issues, the Cross Trade message will indicate the bulk volume associated with the cross event. If the order
 /// interest is insufficient to conduct a cross in a particular issue, however, the Cross Trade message may show the
 /// shares as zero.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct CrossTradeMessage {
     tag: u8,
@@ -1530,7 +1549,7 @@ impl CrossTradeMessage {
 /// Firms that use the ITCH feed to create time-and-sales displays or calculate market statistics should be prepared
 /// to process the broken trade message. If a firm is only using the ITCH feed to build a book, however, it may ignore
 /// these messages as they have no impact on the current book.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct BrokenTradeMessage {
     tag: u8,
@@ -1568,7 +1587,7 @@ impl BrokenTradeMessage {
 /// Between 9:28 and 9:30 a.m. and 3:55 and 4:00 p.m., Nasdaq disseminates the NOII information every second.
 /// For Nasdaq Halt, IPO and Pauses, NOII messages will be disseminated at 1 second intervals starting 1 second after quoting period starts/trading action is released.
 /// Nasdaq will also disseminate an Extended Trading Close (ETC) message from 4:00 p.m. to 4:05 p.m. at five second intervals.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct NetOrderImbalanceIndicatorMessage {
     tag: u8,
@@ -1640,6 +1659,7 @@ impl NetOrderImbalanceIndicatorMessage {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum ImbalanceDirection {
     /// buy imbalance
@@ -1668,6 +1688,7 @@ impl From<u8> for ImbalanceDirection {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum CrossType {
     /// Nasdaq Opening Cross
@@ -1693,6 +1714,7 @@ impl From<u8> for CrossType {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum PriceVariationIndicator {
     /// Less than 1%
@@ -1750,7 +1772,7 @@ impl From<u8> for PriceVariationIndicator {
 
 /// Retail Price Improvement Indicator (RPII)
 /// Identifies a retail interest indication of the Bid, Ask or both the Bid and Ask for Nasdaq-listed securities.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct RetailPriceImprovementIndicator {
     tag: u8,
@@ -1787,6 +1809,7 @@ impl RetailPriceImprovementIndicator {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum InterestFlag {
     /// RPI orders available on the buy side
@@ -1815,7 +1838,7 @@ impl From<u8> for InterestFlag {
 /// Direct Listing with Capital Raise Price Discovery Message
 /// The following message is disseminated only for Direct Listing with Capital Raise (DLCR) securities. Nasdaq begins
 /// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
-#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct DirectListingwithCapitalRaisePriceDiscoveryMessage {
     tag: u8,
@@ -1882,6 +1905,7 @@ impl DirectListingwithCapitalRaisePriceDiscoveryMessage {
     }
 }
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum OpenEligibilityStatus {
     /// Not Eligible
