@@ -7,5 +7,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+memmap2 = "0.9.10"
+thiserror = "2.0.18"
 zerocopy = { version = "0.8", features = ["derive"] }
 
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+
+
+[[bench]]
+name = "itch_bench"
+harness = false
