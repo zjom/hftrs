@@ -53,6 +53,8 @@ pub enum ServerCommand {
     /// End-of-session packet (msg_count = 0xFFFF). The sender thread exits
     /// once this is sent. The re-request thread keeps running.
     EndSession,
+    /// Changes session ident sent.
+    ChangeSession(String),
 }
 
 #[derive(Builder)]
@@ -89,6 +91,10 @@ impl ServerHandle {
     }
     pub fn end_session(&self) {
         let _ = self.tx.send(ServerCommand::EndSession);
+    }
+
+    pub fn change_session(&self, session: String) {
+        let _ = self.tx.send(ServerCommand::ChangeSession(session));
     }
 }
 
@@ -168,7 +174,7 @@ fn store_messages(log: &Mutex<BTreeMap<u64, Vec<u8>>>, start_seq: u64, msgs: &[V
 fn sender_loop(
     socket: UdpSocket,
     dest: SocketAddr,
-    session: [u8; 10],
+    mut session: [u8; 10],
     log: Arc<Mutex<BTreeMap<u64, Vec<u8>>>>,
     cmd_rx: Receiver<ServerCommand>,
 ) {
@@ -212,6 +218,9 @@ fn sender_loop(
                 }
                 info!("server: end-of-session at seq {next_seq}");
                 break;
+            }
+            ServerCommand::ChangeSession(s) => {
+                session = pad_session(&s);
             }
         }
     }
