@@ -250,32 +250,56 @@ fn rerequest_loop(socket: UdpSocket, session: [u8; 10], log: Arc<Mutex<BTreeMap<
             continue;
         }
 
-        // Collect contiguous messages from start_seq. If something is missing
-        // we still send what we have — the client will re-ask for the rest.
-        let msgs: Vec<Vec<u8>> = {
+        let chunks: Vec<Vec<Vec<u8>>> = {
+            // Collect contiguous messages from start_seq. If something is missing
+            // we still send what we have — the client will re-ask for the rest.
             let log_g = log.lock().unwrap();
-            (0..want)
-                .map_while(|i| log_g.get(&(start_seq + i)).cloned())
-                .collect()
+            let msgs = (0..want).map_while(|i| log_g.get(&(start_seq + i)).cloned());
+
+            let mut chunks: Vec<Vec<Vec<u8>>> = Vec::new();
+            let mut current: Vec<Vec<u8>> = Vec::new();
+            let mut current_size: usize = 0;
+
+            for msg in msgs {
+                let msg_len = msg.len();
+
+                // If a single message exceeds the limit, it goes in its own chunk.
+                // Otherwise, flush the current chunk if adding would overflow.
+                if !current.is_empty() && current_size + msg_len > MAX_PAYLOAD {
+                    chunks.push(std::mem::take(&mut current));
+                    current_size = 0;
+                }
+
+                current_size += msg_len;
+                current.push(msg);
+            }
+
+            if !current.is_empty() {
+                chunks.push(current);
+            }
+
+            chunks
         };
 
-        if msgs.is_empty() {
+        if chunks.is_empty() {
             debug!("nothing in log for re-request from {peer} starting at {start_seq}");
             continue;
         }
 
-        // NOTE: a real server would chunk the response by MTU. Tests assume
-        // small messages so we emit one packet covering everything we have.
-        let pkt = build_packet(&session, start_seq, &msgs);
-        if let Err(e) = socket.send_to(&pkt, peer) {
-            error!("retx send error to {peer}: {e}");
-        } else {
-            debug!(
-                "retransmitted {} msg(s) starting at seq {} to {}",
-                msgs.len(),
-                start_seq,
-                peer
-            );
+        for msgs in chunks {
+            let pkt = build_packet(&session, start_seq, &msgs);
+            if let Err(e) = socket.send_to(&pkt, peer) {
+                error!("retx send error to {peer}: {e}");
+            } else {
+                debug!(
+                    "retransmitted {} msg(s) starting at seq {} to {}",
+                    msgs.len(),
+                    start_seq,
+                    peer
+                );
+            }
         }
     }
 }
+
+const MAX_PAYLOAD: usize = 1452; // 1500 - 20 (IP) - 8 (UDP) - 20 (Mold header)
