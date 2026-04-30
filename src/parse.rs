@@ -163,6 +163,7 @@ impl<'a> Parser<'a> {
 ///
 /// The tag byte is validated so that framing errors surface immediately
 /// rather than silently propagating garbage downstream.
+#[inline]
 pub fn parse_one(buf: &[u8]) -> Result<(&[u8], &[u8]), ParseError> {
     let (len_bytes, rest) = buf.split_at_checked(2).ok_or(ParseError::EmptyBuffer)?;
     let msg_len = u16::from_be_bytes(len_bytes.try_into().unwrap()) as usize;
@@ -185,6 +186,7 @@ pub fn parse_one(buf: &[u8]) -> Result<(&[u8], &[u8]), ParseError> {
 /// Note:
 /// - `body` should begin with the message's appropriate tag.
 /// - `body` should not contain the length prefix.
+#[inline]
 pub fn cast<T: FromBytes + KnownLayout + Immutable>(body: &[u8]) -> Result<&T, ParseError> {
     T::ref_from_bytes(body).map_err(|_| ParseError::MalformedData)
 }

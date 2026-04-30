@@ -3,6 +3,7 @@ use zerocopy::{
     network_endian::{U16, U32, U64},
 };
 
+#[inline]
 fn read_u48(bytes: &[u8; 6]) -> u64 {
     let mut b = [0u8; 8];
     b[2..].copy_from_slice(bytes);
