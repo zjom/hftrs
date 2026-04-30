@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-const DATA_PATH: &str = "data/itch_1000_000";
+const DATA_PATH: &str = "examples/data/itch_1000_000";
 const MULTICAST_ADDR: &str = "239.1.2.3:5000";
 const REREQUEST_ADDR: &str = "127.0.0.1:6000";
 const SESSION: &str = "TESTSESSN";
@@ -64,7 +64,6 @@ fn main() -> Result<()> {
     let mut next_flush = pick_flush_size();
     let mut parsed: u64 = 0;
     let mut sent: u64 = 0;
-
     while !buf.is_empty() {
         if shutdown.load(Ordering::Relaxed) {
             log::info!("shutdown requested at offset {}", total_bytes - buf.len());
@@ -72,7 +71,7 @@ fn main() -> Result<()> {
         }
 
         let before = buf.len();
-        let (msg, rest) = match itch5::parse(buf) {
+        let (msg, rest) = match itch5::parse_one(buf) {
             Ok(t) => t,
             Err(e) => {
                 let offset = total_bytes - buf.len();
@@ -91,7 +90,7 @@ fn main() -> Result<()> {
         }
 
         buf = rest;
-        batch.push(msg.as_bytes().to_vec());
+        batch.push(msg.to_vec());
         parsed += 1;
 
         if batch.len() >= next_flush {

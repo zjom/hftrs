@@ -376,9 +376,9 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itch5"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2079dc837a2f3956500bcb0708af20c20dfbfc3c0f3458a078862264e0156fb2"
+checksum = "0d1ae91b3d58777b0de2704a9a6d094fc9c80b6d1448f07de5a877cc8f9e2ff8"
 dependencies = [
  "memmap2",
  "thiserror",
