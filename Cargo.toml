@@ -19,5 +19,12 @@ anyhow = "1.0.102"
 env_logger = "0.11.10"
 log = "0.4.29"
 ctrlc = "3.5.2"
-itch5 = "0.1.1"
+itch5 = "0.1.2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "client_bench"
+harness = false
 
