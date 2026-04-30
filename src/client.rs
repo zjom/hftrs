@@ -120,7 +120,7 @@ impl MoldUDP64 {
 
     /// Test seam — accepts pre-bound sockets so tests can drive the client
     /// over loopback unicast without needing multicast support.
-    pub(crate) fn start_with_sockets(
+    pub fn start_with_sockets(
         &self,
         downstream: UdpSocket,
         rereq: UdpSocket,
