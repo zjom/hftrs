@@ -277,9 +277,10 @@ fn sender_loop(
 
                     let count = msgs.len() as u64;
                     store_messages(&log, next_seq, &msgs);
+                    let pkt_seq = next_seq;
                     next_seq += count;
                     for msgs in chunk_messages(msgs, max_payload) {
-                        let pkt = build_packet(&session, next_seq, &msgs);
+                        let pkt = build_packet(&session, pkt_seq, &msgs);
                         if let Err(e) = socket.send_to(&pkt, dest) {
                             error!("downstream send error at seq {next_seq}: {e}");
                         }
