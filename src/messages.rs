@@ -26,6 +26,10 @@ impl Price4 {
     pub fn into_f64(&self) -> f64 {
         f64::from(self.into_u32()) / 10000.0
     }
+
+    pub fn into_i64(&self) -> i64 {
+        self.into_u32() as i64
+    }
 }
 
 /// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
