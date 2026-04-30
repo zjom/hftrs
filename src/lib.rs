@@ -1,14 +1,15 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! A limit order book for Nasdaq TotalView-ITCH 5.0 market data.
+//!
+//! See the `README.md` for design rationale. The hot-path entry points are
+//! [`OrderBook::add`], [`OrderBook::execute`], [`OrderBook::cancel`],
+//! [`OrderBook::delete`], and [`OrderBook::replace`].
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod book;
+pub mod error;
+pub mod level;
+pub mod pool;
+pub mod types;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use book::OrderBook;
+pub use error::{BookError, Result};
+pub use types::{Order, OrderId, Price, Quantity, Side, Timestamp, Trade};
