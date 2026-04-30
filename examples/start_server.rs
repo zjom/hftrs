@@ -6,16 +6,22 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-const DATA_PATH: &str = "examples/data/itch_1000_000";
+const USAGE_STR: &str = "usage: cargo run --example parse_file </PATH/TO/ITCH5/FILE>";
 const MULTICAST_ADDR: &str = "239.1.2.3:5000";
 const REREQUEST_ADDR: &str = "127.0.0.1:6000";
 const SESSION: &str = "TESTSESSN";
 const MAX_MSGS: usize = 100;
 
 fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        bail!(USAGE_STR);
+    }
+    let input_file_path = args.get(1).unwrap();
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let path = Path::new(DATA_PATH);
+    let path = Path::new(input_file_path);
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
 
     let file_len = file.metadata().context("reading file metadata")?.len();
