@@ -340,7 +340,8 @@ pub struct RetransmissionRequest {
     attempts: u8,
 }
 impl RetransmissionRequest {
-    pub fn new(packet: RetransmissionPacket) -> Self {
+    #[inline]
+    pub const fn new(packet: RetransmissionPacket) -> Self {
         RetransmissionRequest {
             req: packet,
             attempts: 0,
