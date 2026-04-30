@@ -2,7 +2,6 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use memmap2::Mmap;
 use std::fs::File;
 use std::hint;
-use std::time::Duration;
 
 #[derive(Default)]
 struct Handler {
@@ -10,7 +9,10 @@ struct Handler {
 }
 
 impl itch5::MessageHandler for Handler {
-    fn on_trade_message(&mut self, _msg: &itch5::TradeMessage) -> std::ops::ControlFlow<()> {
+    fn on_trade_message(
+        &mut self,
+        _msg: &itch5::messages::TradeMessage,
+    ) -> std::ops::ControlFlow<()> {
         self.trades += 1;
         std::ops::ControlFlow::Continue(())
     }
