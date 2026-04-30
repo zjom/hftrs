@@ -13,17 +13,6 @@ pub enum ParseError {
     MalformedData,
 }
 
-fn try_parse<'a, T: FromBytes + KnownLayout + Immutable>(
-    buf: &'a [u8],
-    msg_len: usize,
-) -> Result<(&'a T, &'a [u8]), ParseError> {
-    let (body, rest) = buf
-        .split_at_checked(msg_len)
-        .ok_or(ParseError::MalformedData)?;
-    let msg = T::ref_from_bytes(body).map_err(|_| ParseError::MalformedData)?;
-    Ok((msg, rest))
-}
-
 pub trait MessageHandler {
     fn on_system_event_message(&mut self, _msg: &SystemEventMessage) -> ControlFlow<()> {
         ControlFlow::Continue(())
@@ -127,73 +116,75 @@ impl<'a> Parser<'a> {
     }
     pub fn parse_stream(&mut self, handler: &mut impl MessageHandler) -> Result<(), ParseError> {
         while !self.buf.is_empty() {
-            let (len_bytes, rest) = self
-                .buf
-                .split_at_checked(2)
-                .ok_or(ParseError::EmptyBuffer)?;
-            let msg_len = u16::from_be_bytes(len_bytes.try_into().unwrap()) as usize;
-            let tag = rest.first().ok_or(ParseError::EmptyBuffer)?;
-            let (cf, next) = match tag {
-                b'S' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_system_event_message(&m), rem)),
-                b'R' => {
-                    try_parse(rest, msg_len).map(|(m, rem)| (handler.on_stock_directory(&m), rem))
-                }
-                b'H' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_stock_trading_action(&m), rem)),
-                b'Y' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_reg_sho_restriction(&m), rem)),
-                b'L' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_market_participant_position(&m), rem)),
-                b'V' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_mwcb_decline_level_message(&m), rem)),
-                b'W' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_mwcb_status_message(&m), rem)),
-                b'K' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_quoting_period_update(&m), rem)),
-                b'J' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_luld_auction_collar(&m), rem)),
-                b'h' => {
-                    try_parse(rest, msg_len).map(|(m, rem)| (handler.on_operational_halt(&m), rem))
-                }
-                b'A' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_add_order_no_mpid_attribution(&m), rem)),
-                b'F' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_add_order_with_mpid_attribution(&m), rem)),
-                b'E' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_order_executed_message(&m), rem)),
-                b'C' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_order_executed_with_price_message(&m), rem)),
-                b'X' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_order_cancel_message(&m), rem)),
-                b'D' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_order_delete_message(&m), rem)),
-                b'U' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_order_replace_message(&m), rem)),
-                b'P' => {
-                    try_parse(rest, msg_len).map(|(m, rem)| (handler.on_trade_message(&m), rem))
-                }
-                b'Q' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_cross_trade_message(&m), rem)),
-                b'B' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_broken_trade_message(&m), rem)),
-                b'I' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_net_order_imbalance_indicator_message(&m), rem)),
-                b'N' => try_parse(rest, msg_len)
-                    .map(|(m, rem)| (handler.on_retail_price_improvement_indicator(&m), rem)),
-                b'O' => try_parse(rest, msg_len).map(|(m, rem)| {
-                    (
-                        handler.on_direct_listing_with_capital_raise_price_discovery_message(&m),
-                        rem,
-                    )
-                }),
-                unknown => Err(ParseError::UnknownMessageType(*unknown)),
-            }?;
-            self.buf = next;
+            let (body, rest) = parse_one(self.buf)?;
+            self.buf = rest;
+            // body[0] is guaranteed to be a known tag by parse().
+            let cf = match body[0] {
+                b'S' => handler.on_system_event_message(cast(body)?),
+                b'R' => handler.on_stock_directory(cast(body)?),
+                b'H' => handler.on_stock_trading_action(cast(body)?),
+                b'Y' => handler.on_reg_sho_restriction(cast(body)?),
+                b'L' => handler.on_market_participant_position(cast(body)?),
+                b'V' => handler.on_mwcb_decline_level_message(cast(body)?),
+                b'W' => handler.on_mwcb_status_message(cast(body)?),
+                b'K' => handler.on_quoting_period_update(cast(body)?),
+                b'J' => handler.on_luld_auction_collar(cast(body)?),
+                b'h' => handler.on_operational_halt(cast(body)?),
+                b'A' => handler.on_add_order_no_mpid_attribution(cast(body)?),
+                b'F' => handler.on_add_order_with_mpid_attribution(cast(body)?),
+                b'E' => handler.on_order_executed_message(cast(body)?),
+                b'C' => handler.on_order_executed_with_price_message(cast(body)?),
+                b'X' => handler.on_order_cancel_message(cast(body)?),
+                b'D' => handler.on_order_delete_message(cast(body)?),
+                b'U' => handler.on_order_replace_message(cast(body)?),
+                b'P' => handler.on_trade_message(cast(body)?),
+                b'Q' => handler.on_cross_trade_message(cast(body)?),
+                b'B' => handler.on_broken_trade_message(cast(body)?),
+                b'I' => handler.on_net_order_imbalance_indicator_message(cast(body)?),
+                b'N' => handler.on_retail_price_improvement_indicator(cast(body)?),
+                b'O' => handler
+                    .on_direct_listing_with_capital_raise_price_discovery_message(cast(body)?),
+                unknown => return Err(ParseError::UnknownMessageType(unknown)),
+            };
             if cf.is_break() {
                 break;
             }
         }
         Ok(())
     }
+}
+
+/// Parse a single ITCH 5.0 framed message from `buf`.
+///
+/// Returns the message body (the bytes after the 2-byte length prefix,
+/// starting with the message-type tag) and the remainder of the buffer.
+/// Use this when you only need the raw bytes — e.g. to forward them to
+/// another consumer — and don't care about the typed contents.
+///
+/// The tag byte is validated so that framing errors surface immediately
+/// rather than silently propagating garbage downstream.
+pub fn parse_one(buf: &[u8]) -> Result<(&[u8], &[u8]), ParseError> {
+    let (len_bytes, rest) = buf.split_at_checked(2).ok_or(ParseError::EmptyBuffer)?;
+    let msg_len = u16::from_be_bytes(len_bytes.try_into().unwrap()) as usize;
+    let (body, rest) = rest
+        .split_at_checked(msg_len)
+        .ok_or(ParseError::MalformedData)?;
+    match body.first() {
+        Some(
+            b'S' | b'R' | b'H' | b'Y' | b'L' | b'V' | b'W' | b'K' | b'J' | b'h' | b'A' | b'F'
+            | b'E' | b'C' | b'X' | b'D' | b'U' | b'P' | b'Q' | b'B' | b'I' | b'N' | b'O',
+        ) => Ok((body, rest)),
+        Some(&unknown) => Err(ParseError::UnknownMessageType(unknown)),
+        None => Err(ParseError::MalformedData),
+    }
+}
+
+/// Attempts to cast bytes as message of type `T`.
+/// Generally callers should prefer [`Parser::parse_stream`] or [`parse_one`] over this.
+///
+/// Note:
+/// - `body` should begin with the message's appropriate tag.
+/// - `body` should not contain the length prefix.
+pub fn cast<T: FromBytes + KnownLayout + Immutable>(body: &[u8]) -> Result<&T, ParseError> {
+    T::ref_from_bytes(body).map_err(|_| ParseError::MalformedData)
 }
