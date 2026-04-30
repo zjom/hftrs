@@ -43,7 +43,7 @@ use bon::Builder;
 ///     // the session) if omitted; gaps before this point are not requested.
 ///     .expected_seq_num(1)
 ///     .build()
-///     .start()?;
+///     .start().unwrap();
 ///
 /// // Datagrams arrive in receive order — live and retransmitted packets are
 /// // interleaved. The consumer is responsible for ordering by seq num.
@@ -54,22 +54,24 @@ use bon::Builder;
 ///     let packet = Packet::new(datagram.bytes());
 ///
 ///     // simple validation of messages
-///     if packet.packet_kind() == PacketKind::Heartbeat ||
-///        packet.packet_kind() == PacketKind::EndOfSession {
-///        continue
-///     }
+///     match packet.packet_kind() {
+///       PacketKind::Heartbeat | PacketKind::EndOfSession => continue,
+///       _ => {}
+///     };
 ///     
-///     if packet.iter().len() != packet.msg_count() {
-///         let rereq = RetransmissionPacket{
-///             session: packet.session_ident_raw(),
-///             seq_num: packet.seq_num(),
-///             msg_count: packet.msg_count()
-///         }
-///         tx.try_send(RetransmissionRequest::new(rereq))?
+///     if packet.iter().len() != packet.msg_count().into() {
+///         let rereq = RetransmissionPacket::new(
+///             *packet.session_ident_raw(),
+///              packet.seq_num(),
+///             packet.msg_count()
+///         );
+///         tx.try_send(RetransmissionRequest::new(rereq)).unwrap();
 ///     }
 ///
-///     handle(packet);
+///     handle(&packet);
 /// }
+///
+/// fn handle(_packet: &Packet) {}
 /// ```
 ///
 /// # Errors
@@ -338,7 +340,7 @@ pub struct RetransmissionRequest {
     attempts: u8,
 }
 impl RetransmissionRequest {
-    fn new(packet: RetransmissionPacket) -> Self {
+    pub fn new(packet: RetransmissionPacket) -> Self {
         RetransmissionRequest {
             req: packet,
             attempts: 0,
@@ -360,6 +362,13 @@ pub struct RetransmissionPacket {
     msg_count: u16,
 }
 impl RetransmissionPacket {
+    pub fn new(session: [u8; 10], seq_num: u64, msg_count: u16) -> RetransmissionPacket {
+        RetransmissionPacket {
+            session,
+            seq_num,
+            msg_count,
+        }
+    }
     #[inline]
     fn serialize_into(&self, buf: &mut [u8; 20]) {
         buf[Self::SESSION_OFFSET..Self::SESSION_LENGTH].copy_from_slice(&self.session);
