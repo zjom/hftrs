@@ -1,7 +1,7 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use memmap2::Mmap;
 use std::fs::File;
-use std::hint;
+use std::{env, hint};
 
 #[derive(Default)]
 struct Handler {
@@ -19,7 +19,7 @@ impl itch5::MessageHandler for Handler {
 }
 
 fn bench_parse_one_million_msgs(c: &mut Criterion) {
-    let path = "data/itch_1000_000";
+    let path = env::var("ITCH5_BENCH_1M_FILE").expect("ITCH5_BENCH_1M_FILE env var not set");
     let file = File::open(&path).unwrap();
     let mmap = unsafe { Mmap::map(&file).unwrap() };
 
