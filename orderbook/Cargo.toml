@@ -1,0 +1,32 @@
+[package]
+name = "orderbook"
+version = "0.1.0"
+edition = "2024"
+description = "A limit order book for Nasdaq TotalView-ITCH 5.0 market data"
+license = "Unlicense"
+readme = "README.md"
+
+[dependencies]
+itch5 = {path = "../itch5"}
+memmap2 = "0.9.10"
+
+
+[[bench]]
+name = "book_bench"
+harness = false
+
+[dev-dependencies]
+criterion = { version = "0.8.2", default-features = false, features = ["html_reports", "cargo_bench_support"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+ 
+# Inherit release optimizations for benches but keep symbols so we can
+# attach perf / generate flamegraphs.
+[profile.bench]
+inherits = "release"
+debug = true
