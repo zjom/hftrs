@@ -7,3 +7,5 @@ pub use packet::*;
 mod server;
 pub use server::{MoldUDP64Server, ServerHandle};
 mod util;
+
+pub use zerocopy::FromBytes;
