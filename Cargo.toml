@@ -1,4 +1,4 @@
 [workspace]
-members = ["orderbook", "itch5", "moldudp"]
+members = ["orderbook", "itch5", "moldudp", "app"]
 resolver = "3"
 
