@@ -90,12 +90,13 @@ pub struct MoldUDP64Server {
     rerequest_bind_addr: SocketAddr,
     /// 10-byte session identifier. Strings shorter than 10 bytes are
     /// right-padded with spaces; longer strings are truncated.
+    #[builder(into)]
     session: String,
     #[builder(default = 1452)]
     /// Max size of frame transmitted.
     /// Default is 1452: 1500 - 20 (IP) - 8 (UDP) - 20 (Mold header)
     max_payload: usize,
-    #[builder(default = Duration::from_secs(1))]
+    #[builder(default = Duration::from_secs(1), into)]
     heartbeat_interval: Duration,
     /// Number of commands in command queue before blocking.
     /// Set to 0 for unbuffered.
