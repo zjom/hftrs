@@ -28,7 +28,7 @@ pub struct OrderBook {
     bids: BTreeMap<Price, Level>,
     asks: BTreeMap<Price, Level>,
     orders: HashMap<OrderId, Index>,
-    pool: Pool,
+    pool: Pool<Order>,
 }
 
 impl OrderBook {

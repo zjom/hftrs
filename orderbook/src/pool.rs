@@ -15,33 +15,31 @@
 //! splicing an order out of its price level is O(1) with no extra
 //! indirection.
 
-use crate::types::Order;
-
 pub type Index = u32;
 
 /// Sentinel for "no neighbor" / end-of-list.
 pub const NIL: Index = u32::MAX;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Node {
-    pub order: Order,
+pub struct Node<T> {
+    pub order: T,
     pub prev: Index,
     pub next: Index,
 }
 
 #[derive(Debug, Clone, Copy)]
-enum Slot {
-    Occupied(Node),
+enum Slot<T> {
+    Occupied(Node<T>),
     Free(Index), // next free slot, or NIL
 }
 
 #[derive(Debug)]
-pub struct Pool {
-    slots: Vec<Slot>,
+pub struct Pool<T> {
+    slots: Vec<Slot<T>>,
     free_head: Index,
 }
 
-impl Pool {
+impl<T> Pool<T> {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             slots: Vec::with_capacity(cap),
@@ -49,7 +47,7 @@ impl Pool {
         }
     }
 
-    pub fn alloc(&mut self, node: Node) -> Index {
+    pub fn alloc(&mut self, node: Node<T>) -> Index {
         if self.free_head != NIL {
             let idx = self.free_head;
             // SAFETY-ish: the free list only ever points at `Slot::Free`.
@@ -73,7 +71,7 @@ impl Pool {
     }
 
     #[inline]
-    pub fn get(&self, idx: Index) -> &Node {
+    pub fn get(&self, idx: Index) -> &Node<T> {
         match &self.slots[idx as usize] {
             Slot::Occupied(n) => n,
             Slot::Free(_) => unreachable!("access to freed slot {}", idx),
@@ -81,7 +79,7 @@ impl Pool {
     }
 
     #[inline]
-    pub fn get_mut(&mut self, idx: Index) -> &mut Node {
+    pub fn get_mut(&mut self, idx: Index) -> &mut Node<T> {
         match &mut self.slots[idx as usize] {
             Slot::Occupied(n) => n,
             Slot::Free(_) => unreachable!("access to freed slot {}", idx),
