@@ -25,7 +25,7 @@ use bon::Builder;
 ///
 /// ```no_run
 /// use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-/// use moldudp::{MoldUDP64,Packet,RetransmissionPacket,RetransmissionRequest,PacketKind};
+/// use moldudp::{MoldUDP64,Packet,RetransmissionPacket,RetransmissionRequest,PacketKind,FromBytes};
 ///
 /// let (rx, tx) = MoldUDP64::builder()
 ///     // Multicast group + port carrying the live downstream feed.
@@ -54,7 +54,7 @@ use bon::Builder;
 /// // 20 bytes in length.
 /// while let Ok(datagram) = rx.recv() {
 ///     // Use [`moldudp::Packet`] to construct a 0 allocation view on the bytes.
-///     let packet = Packet::new(datagram.bytes());
+///     let packet = Packet::ref_from_bytes(datagram.bytes()).unwrap();
 ///
 ///     // simple validation of messages
 ///     match packet.packet_kind() {
@@ -63,11 +63,11 @@ use bon::Builder;
 ///     };
 ///     
 ///     if packet.iter().len() != packet.msg_count().into() {
-///         let rereq = RetransmissionPacket::new(
-///             *packet.session_ident_raw(),
-///              packet.seq_num(),
-///             packet.msg_count()
-///         );
+///            let rereq = RetransmissionPacket {
+///             msg_count: packet.msg_count().into(),
+///             seq_num: packet.seq_num().into(),
+///             session: *packet.session_ident_raw(),
+///            };
 ///         tx.try_send(RetransmissionRequest::new(rereq)).unwrap();
 ///     }
 ///
