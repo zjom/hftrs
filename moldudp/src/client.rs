@@ -10,8 +10,7 @@ use std::{
 use tracing::{error, warn};
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::PacketHeader;
-use crate::packet::Packet;
+use crate::packet::{Packet, PacketHeader};
 use crate::util::pad_session;
 use bon::Builder;
 
