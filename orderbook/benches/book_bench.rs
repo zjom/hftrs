@@ -10,8 +10,9 @@
 //! `bench` profile inherits `release` settings (LTO, single codegen unit) but
 //! keeps debug symbols so we can attach `perf` / generate flamegraphs.
 
-use criterion::{BatchSize, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use orderbook::{Order, OrderBook, Side};
+use std::hint::black_box;
 
 const N: u64 = 10_000;
 
