@@ -1,8 +1,10 @@
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::time::Duration;
+use zerocopy::FromBytes;
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use moldudp::{Datagram, MoldUDP64, MoldUDP64Server, Packet, PacketKind};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use moldudp::{Datagram, MoldUDP64, MoldUDP64Server};
+use moldudp::{Packet, PacketKind};
 
 const SESSION: &str = "BENCHSESHN";
 
@@ -55,7 +57,7 @@ fn drain_data(rx: &crossbeam::channel::Receiver<Datagram>, n: usize) {
     while received < n {
         match rx.recv_timeout(Duration::from_secs(5)) {
             Ok(dgram) => {
-                let pkt = Packet::new(dgram.bytes());
+                let pkt = Packet::ref_from_bytes(dgram.bytes()).expect("failed to parse packet");
                 match pkt.packet_kind() {
                     PacketKind::Heartbeat | PacketKind::EndOfSession => continue,
                     _ => received += pkt.msg_count() as usize,
@@ -153,7 +155,8 @@ fn bench_gap_retransmission(c: &mut Criterion) {
             while received < 100 {
                 match rx.recv_timeout(Duration::from_secs(5)) {
                     Ok(dgram) => {
-                        let pkt = Packet::new(dgram.bytes());
+                        let pkt =
+                            Packet::ref_from_bytes(dgram.bytes()).expect("failed to parse packet");
                         match pkt.packet_kind() {
                             PacketKind::Heartbeat | PacketKind::EndOfSession => continue,
                             _ => received += pkt.msg_count() as usize,
@@ -186,7 +189,7 @@ fn bench_packet_parsing(c: &mut Criterion) {
 
     group.bench_function("iterate_100_messages", |b| {
         b.iter(|| {
-            let pkt = Packet::new(&buf);
+            let pkt = Packet::ref_from_bytes(&buf).expect("failed to parse packet");
             let mut count = 0u16;
             for msg in pkt.iter() {
                 std::hint::black_box(msg.data());

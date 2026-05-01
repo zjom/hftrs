@@ -1,6 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::thread;
 use std::time::Duration;
+use zerocopy::FromBytes;
 
 use moldudp::{MoldUDP64, MoldUDP64Server, Packet, PacketKind};
 
@@ -68,9 +69,7 @@ fn loopback_pair_with_session(
     (rx, req_tx, handle)
 }
 
-fn recv_timeout(
-    rx: &crossbeam::channel::Receiver<moldudp::Datagram>,
-) -> Option<moldudp::Datagram> {
+fn recv_timeout(rx: &crossbeam::channel::Receiver<moldudp::Datagram>) -> Option<moldudp::Datagram> {
     rx.recv_timeout(Duration::from_secs(3)).ok()
 }
 
@@ -80,8 +79,8 @@ fn recv_timeout(
 fn packet_parse_session_ident() {
     let mut buf = [0u8; 20];
     buf[..10].copy_from_slice(b"TESTSESSN ");
-    let pkt = Packet::new(&buf);
-    assert_eq!(pkt.session_ident(), "TESTSESSN ");
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
+    assert_eq!(pkt.session_ident().unwrap(), "TESTSESSN ");
 }
 
 #[test]
@@ -89,7 +88,7 @@ fn packet_parse_seq_num() {
     let mut buf = [0u8; 20];
     buf[..10].copy_from_slice(b"0123456789");
     buf[10..18].copy_from_slice(&42u64.to_be_bytes());
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert_eq!(pkt.seq_num(), 42);
 }
 
@@ -98,7 +97,7 @@ fn packet_parse_msg_count() {
     let mut buf = [0u8; 20];
     buf[..10].copy_from_slice(b"0123456789");
     buf[18..20].copy_from_slice(&3u16.to_be_bytes());
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert_eq!(pkt.msg_count(), 3);
 }
 
@@ -107,7 +106,7 @@ fn packet_kind_heartbeat() {
     let mut buf = [0u8; 20];
     buf[..10].copy_from_slice(b"0123456789");
     // msg_count = 0 => heartbeat
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert!(matches!(pkt.packet_kind(), PacketKind::Heartbeat));
 }
 
@@ -116,7 +115,7 @@ fn packet_kind_end_of_session() {
     let mut buf = [0u8; 20];
     buf[..10].copy_from_slice(b"0123456789");
     buf[18..20].copy_from_slice(&0xFFFFu16.to_be_bytes());
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert!(matches!(pkt.packet_kind(), PacketKind::EndOfSession));
 }
 
@@ -125,7 +124,7 @@ fn packet_kind_standard() {
     let mut buf = [0u8; 20];
     buf[..10].copy_from_slice(b"0123456789");
     buf[18..20].copy_from_slice(&5u16.to_be_bytes());
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert!(matches!(pkt.packet_kind(), PacketKind::Standard));
 }
 
@@ -141,7 +140,7 @@ fn packet_iter_single_message() {
     buf.extend_from_slice(&5u16.to_be_bytes()); // msg len
     buf.extend_from_slice(b"hello"); // msg data
 
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].length(), 5);
@@ -159,7 +158,7 @@ fn packet_iter_multiple_messages() {
         buf.extend_from_slice(payload);
     }
 
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 3);
     assert_eq!(msgs[0].data(), b"aaa");
@@ -170,7 +169,7 @@ fn packet_iter_multiple_messages() {
 #[test]
 fn packet_iter_heartbeat_yields_nothing() {
     let buf = [0u8; 20]; // msg_count = 0
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf);
     assert_eq!(pkt.iter().len(), 0);
     assert!(pkt.iter().next().is_none());
 }
@@ -179,7 +178,7 @@ fn packet_iter_heartbeat_yields_nothing() {
 fn packet_iter_end_of_session_yields_nothing() {
     let mut buf = [0u8; 20];
     buf[18..20].copy_from_slice(&0xFFFFu16.to_be_bytes());
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf);
     assert_eq!(pkt.iter().len(), 0);
     assert!(pkt.iter().next().is_none());
 }
@@ -197,7 +196,7 @@ fn packet_iter_truncated_message_stops_early() {
     buf.extend_from_slice(&10u16.to_be_bytes());
     buf.extend_from_slice(b"xy");
 
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf);
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 1); // only the first valid message
 }
@@ -213,7 +212,7 @@ fn packet_exact_size_iterator() {
         buf.extend_from_slice(payload);
     }
 
-    let pkt = Packet::new(&buf);
+    let pkt = Packet::ref_from_bytes(&buf);
     let iter = pkt.iter();
     assert_eq!(iter.len(), 2);
 }
@@ -227,7 +226,7 @@ fn client_receives_single_packet() {
     handle.send(vec![b"hello".to_vec()]);
 
     let dgram = recv_timeout(&rx).expect("should receive a datagram");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].data(), b"hello");
@@ -240,7 +239,7 @@ fn client_receives_multiple_messages_in_one_packet() {
     handle.send(vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()]);
 
     let dgram = recv_timeout(&rx).expect("should receive a datagram");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 3);
     assert_eq!(msgs[0].data(), b"one");
@@ -255,7 +254,7 @@ fn client_receives_heartbeat() {
     handle.heartbeat();
 
     let dgram = recv_timeout(&rx).expect("should receive heartbeat");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     assert!(matches!(pkt.packet_kind(), PacketKind::Heartbeat));
     assert_eq!(pkt.msg_count(), 0);
 }
@@ -267,7 +266,7 @@ fn client_receives_end_of_session() {
     handle.end_of_session();
 
     let dgram = recv_timeout(&rx).expect("should receive end-of-session");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     assert!(matches!(pkt.packet_kind(), PacketKind::EndOfSession));
 }
 
@@ -278,7 +277,7 @@ fn client_detects_gap_and_receives_retransmission() {
     // Send message at seq 1 (client expects seq 1)
     handle.send(vec![b"first".to_vec()]);
     let dgram = recv_timeout(&rx).expect("should receive first packet");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs[0].data(), b"first");
 
@@ -299,8 +298,11 @@ fn client_detects_gap_and_receives_retransmission() {
         }
         match rx.recv_timeout(Duration::from_secs(3)) {
             Ok(dgram) => {
-                let pkt = Packet::new(dgram.bytes());
-                if matches!(pkt.packet_kind(), PacketKind::Heartbeat | PacketKind::EndOfSession) {
+                let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
+                if matches!(
+                    pkt.packet_kind(),
+                    PacketKind::Heartbeat | PacketKind::EndOfSession
+                ) {
                     continue;
                 }
                 for msg in pkt.iter() {
@@ -336,8 +338,11 @@ fn client_receives_multiple_sequential_packets() {
     for _ in 0..20 {
         match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(dgram) => {
-                let pkt = Packet::new(dgram.bytes());
-                if matches!(pkt.packet_kind(), PacketKind::Heartbeat | PacketKind::EndOfSession) {
+                let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
+                if matches!(
+                    pkt.packet_kind(),
+                    PacketKind::Heartbeat | PacketKind::EndOfSession
+                ) {
                     continue;
                 }
                 for msg in pkt.iter() {
@@ -367,9 +372,9 @@ fn client_session_ident_matches() {
     handle.send(vec![b"payload".to_vec()]);
 
     let dgram = recv_timeout(&rx).expect("should receive datagram");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     // Server pads session to 10 bytes with spaces.
-    assert_eq!(pkt.session_ident(), "ABCDEFGHIJ");
+    assert_eq!(pkt.session_ident().unwrap(), "ABCDEFGHIJ");
 }
 
 #[test]
@@ -384,7 +389,7 @@ fn datagram_bytes_returns_correct_slice() {
     // Should be a valid MoldUDP64 packet (at least 20 bytes header)
     assert!(bytes.len() >= 20);
     // The packet should contain our message
-    let pkt = Packet::new(bytes);
+    let pkt = Packet::ref_from_bytes(bytes).unwrap();
     assert_eq!(pkt.msg_count(), 1);
 }
 
@@ -396,7 +401,7 @@ fn client_handles_empty_message() {
     handle.send(vec![vec![]]);
 
     let dgram = recv_timeout(&rx).expect("should receive datagram");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].length(), 0);
@@ -409,7 +414,7 @@ fn automatic_heartbeats_are_received() {
 
     // Server sends heartbeats every 100ms; just wait for one.
     let dgram = recv_timeout(&rx).expect("should receive automatic heartbeat");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     assert!(matches!(pkt.packet_kind(), PacketKind::Heartbeat));
 }
 
@@ -424,7 +429,7 @@ fn stop_session_switches_heartbeats_to_eos() {
     for _ in 0..20 {
         match rx.recv_timeout(Duration::from_secs(2)) {
             Ok(dgram) => {
-                let pkt = Packet::new(dgram.bytes());
+                let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
                 if matches!(pkt.packet_kind(), PacketKind::EndOfSession) {
                     saw_eos = true;
                     break;
@@ -469,7 +474,7 @@ fn client_handles_large_messages() {
     handle.send(vec![large_payload.clone()]);
 
     let dgram = recv_timeout(&rx).expect("should receive large message");
-    let pkt = Packet::new(dgram.bytes());
+    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].data(), large_payload.as_slice());
@@ -501,8 +506,11 @@ fn client_retransmits_multiple_gaps() {
     for _ in 0..20 {
         match rx.recv_timeout(Duration::from_secs(3)) {
             Ok(dgram) => {
-                let pkt = Packet::new(dgram.bytes());
-                if matches!(pkt.packet_kind(), PacketKind::Heartbeat | PacketKind::EndOfSession) {
+                let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
+                if matches!(
+                    pkt.packet_kind(),
+                    PacketKind::Heartbeat | PacketKind::EndOfSession
+                ) {
                     continue;
                 }
                 for msg in pkt.iter() {
