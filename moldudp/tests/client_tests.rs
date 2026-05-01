@@ -1,9 +1,8 @@
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::thread;
 use std::time::Duration;
-use zerocopy::FromBytes;
 
-use moldudp::{MoldUDP64, MoldUDP64Server, Packet, PacketKind};
+use moldudp::{FromBytes, MoldUDP64, MoldUDP64Server, Packet, PacketKind};
 
 const SESSION: &str = "ABCDEFGHIJ";
 

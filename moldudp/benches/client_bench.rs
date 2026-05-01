@@ -1,10 +1,9 @@
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::time::Duration;
-use zerocopy::FromBytes;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use moldudp::{Datagram, MoldUDP64, MoldUDP64Server};
-use moldudp::{Packet, PacketKind};
+use moldudp::{FromBytes, Packet, PacketKind};
 
 const SESSION: &str = "BENCHSESHN";
 
