@@ -1,5 +1,6 @@
 use crossbeam::channel::{self, Receiver, Sender};
 use crossbeam::queue::ArrayQueue;
+use std::ops::Deref;
 use std::{
     io,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
@@ -7,8 +8,11 @@ use std::{
     thread::spawn,
 };
 use tracing::{error, warn};
+use zerocopy::{FromBytes, IntoBytes};
 
+use crate::PacketHeader;
 use crate::packet::Packet;
+use crate::util::pad_session;
 use bon::Builder;
 
 /// MoldUDP64 client.
@@ -142,7 +146,7 @@ impl MoldUDP64 {
         {
             let pool = Arc::clone(&pool);
             let data_tx = data_tx.clone();
-            let mut session = self.expected_session_ident.clone();
+            let mut session = self.expected_session_ident.as_ref().map(|s| pad_session(s));
             let mut seq = self.expected_seq_num;
             let req_tx = req_tx.clone();
             spawn(move || {
@@ -161,12 +165,10 @@ impl MoldUDP64 {
             let req_tx = req_tx.clone();
             let max_rerequest_retries = self.max_rerequest_retries;
             spawn(move || {
-                let mut buf = [0u8; 20];
                 while let Ok(RetransmissionRequest { req, attempts }) = req_rx.recv()
                     && attempts < max_rerequest_retries
                 {
-                    req.serialize_into(&mut buf);
-                    if let Err(e) = socket.send_to(buf.as_slice(), &server_addr) {
+                    if let Err(e) = socket.send_to(req.as_bytes(), &server_addr) {
                         warn!("failed to send re-request to {server_addr}: {e}");
                         if req_tx
                             .try_send(RetransmissionRequest {
@@ -202,7 +204,7 @@ fn multicast_recv_loop(
     pool: Pool,
     data_tx: Sender<Datagram>,
     req_tx: Sender<RetransmissionRequest>,
-    expected_session_ident: &mut Option<String>,
+    expected_session_ident: &mut Option<[u8; 10]>,
     expected_seq_num: &mut Option<u64>,
 ) {
     loop {
@@ -225,21 +227,28 @@ fn multicast_recv_loop(
             continue;
         }
 
-        let packet = Packet::new(&buf);
+        let packet = match Packet::ref_from_bytes(&buf) {
+            Ok(packet) => packet,
+            Err(e) => {
+                error!("multicast recv packet parse error: {e}");
+                let _ = pool.push(buf);
+                break;
+            }
+        };
 
         // Gap detection: if the live stream has skipped ahead of what we were
         // expecting, ask the re-request server for the missing range.
         if let (Some(exp_session), Some(exp_seq)) =
-            (expected_session_ident.as_deref(), *expected_seq_num)
+            (expected_session_ident.deref(), *expected_seq_num)
         {
-            let session_matches = exp_session == packet.session_ident();
+            let session_matches = exp_session == packet.session_ident_raw();
             if session_matches && packet.seq_num() > exp_seq {
                 let gap = packet.seq_num() - exp_seq;
                 let msg_count = gap.min(u16::MAX as u64) as u16;
                 let req = RetransmissionPacket {
                     session: *packet.session_ident_raw(),
-                    seq_num: exp_seq,
-                    msg_count: msg_count,
+                    seq_num: exp_seq.into(),
+                    msg_count: msg_count.into(),
                 };
                 if req_tx.try_send(RetransmissionRequest::new(req)).is_err() {
                     error!("re-request queue full or disconnected");
@@ -250,14 +259,7 @@ fn multicast_recv_loop(
 
         // Advance expectation to the seq right after this packet's last msg.
         *expected_seq_num = Some(packet.seq_num() + packet.msg_count() as u64);
-        match expected_session_ident {
-            Some(s) => {
-                s.clear();
-                s.push_str(packet.session_ident());
-            }
-            None => *expected_session_ident = Some(packet.session_ident().to_owned()),
-        }
-
+        *expected_session_ident = Some(*packet.session_ident_raw());
         forward(&data_tx, &pool, buf, n, "multicast");
     }
 }
@@ -357,36 +359,4 @@ impl RetransmissionRequest {
 /// that socket (in other words, the client need only have one socket open to listen to the multicast and to process
 /// retransmissions, even though the retransmissions are not multicast).
 
-pub struct RetransmissionPacket {
-    session: [u8; 10],
-    seq_num: u64,
-    msg_count: u16,
-}
-impl RetransmissionPacket {
-    pub fn new(session: [u8; 10], seq_num: u64, msg_count: u16) -> RetransmissionPacket {
-        RetransmissionPacket {
-            session,
-            seq_num,
-            msg_count,
-        }
-    }
-    #[inline]
-    fn serialize_into(&self, buf: &mut [u8; 20]) {
-        buf[Self::SESSION_OFFSET..Self::SESSION_LENGTH].copy_from_slice(&self.session);
-
-        let end = Self::SEQ_OFFSET + Self::SEQ_LENGTH;
-        buf[Self::SEQ_OFFSET..end].copy_from_slice(&self.seq_num.to_be_bytes());
-
-        let end = Self::MSG_COUNT_OFFSET + Self::MSG_COUNT_LENGTH;
-        buf[Self::MSG_COUNT_OFFSET..end].copy_from_slice(&self.msg_count.to_be_bytes());
-    }
-
-    const SESSION_OFFSET: usize = 0;
-    const SESSION_LENGTH: usize = 10;
-
-    const SEQ_OFFSET: usize = 10;
-    const SEQ_LENGTH: usize = 8;
-
-    const MSG_COUNT_OFFSET: usize = 18;
-    const MSG_COUNT_LENGTH: usize = 2;
-}
+pub type RetransmissionPacket = PacketHeader;

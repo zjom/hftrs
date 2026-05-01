@@ -42,9 +42,10 @@ use bon::Builder;
 use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender};
 use tracing::{debug, error, info, warn};
 
+use crate::packet;
+use crate::util::pad_session;
+
 const HEADER_LEN: usize = 20;
-const HEARTBEAT: u16 = 0x0000;
-const END_OF_SESSION: u16 = 0xFFFF;
 
 type DB = Mutex<BTreeMap<u64, Vec<u8>>>;
 
@@ -191,14 +192,6 @@ impl MoldUDP64Server {
     }
 }
 
-fn pad_session(s: &str) -> [u8; 10] {
-    let mut out = [b' '; 10];
-    let bytes = s.as_bytes();
-    let n = bytes.len().min(10);
-    out[..n].copy_from_slice(&bytes[..n]);
-    out
-}
-
 fn build_packet(session: &[u8; 10], seq_num: u64, msgs: &[Vec<u8>]) -> Vec<u8> {
     let total: usize = HEADER_LEN + msgs.iter().map(|m| 2 + m.len()).sum::<usize>();
     let mut buf = Vec::with_capacity(total);
@@ -239,7 +232,11 @@ fn send_periodic(
     next_seq: u64,
     stopped: bool,
 ) {
-    let msg_count = if stopped { END_OF_SESSION } else { HEARTBEAT };
+    let msg_count = if stopped {
+        packet::END_OF_SESSION_IDENT
+    } else {
+        packet::HEARTBEAT_IDENT
+    };
     let pkt = build_special(session, next_seq, msg_count);
     if let Err(e) = socket.send_to(&pkt, dest) {
         let kind = if stopped {
@@ -307,7 +304,7 @@ fn sender_loop(
                     send_periodic(&socket, dest, &session, next_seq, stopped);
                 }
                 ServerCommand::EndOfSession => {
-                    let pkt = build_special(&session, next_seq, END_OF_SESSION);
+                    let pkt = build_special(&session, next_seq, packet::END_OF_SESSION_IDENT);
                     if let Err(e) = socket.send_to(&pkt, dest) {
                         error!("end-of-session send error: {e}");
                     }
