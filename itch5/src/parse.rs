@@ -13,6 +13,12 @@ pub enum ParseError {
     MalformedData,
 }
 
+/// Visitor called by [`Parser`] for each decoded ITCH 5.0 message.
+///
+/// Every method has a default no-op implementation that returns
+/// `ControlFlow::Continue(())`, so you only need to override the message
+/// types you care about.  Return `ControlFlow::Break(())` from any method
+/// to stop parsing immediately.
 pub trait MessageHandler {
     fn on_system_event_message(&mut self, _msg: &SystemEventMessage) -> ControlFlow<()> {
         ControlFlow::Continue(())
@@ -106,14 +112,24 @@ pub trait MessageHandler {
     }
 }
 
+/// Streaming ITCH 5.0 parser over a byte slice.
+///
+/// Borrows its input for zero-copy parsing; no heap allocation occurs.
 pub struct Parser<'a> {
     buf: &'a [u8],
 }
 
 impl<'a> Parser<'a> {
+    /// Create a parser over `buf`.
     pub fn new(buf: &'a [u8]) -> Self {
         Self { buf }
     }
+
+    /// Iterate over every framed message in the buffer, dispatching each to
+    /// the corresponding [`MessageHandler`] method.
+    ///
+    /// Returns `Ok(())` when the buffer is exhausted or the handler returns
+    /// `ControlFlow::Break(())`.  Returns `Err` on any framing or type error.
     pub fn parse_stream(&mut self, handler: &mut impl MessageHandler) -> Result<(), ParseError> {
         while !self.buf.is_empty() {
             let (body, rest) = parse_one(self.buf)?;
