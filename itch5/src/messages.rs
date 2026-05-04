@@ -2509,14 +2509,6 @@ impl From<u8> for OpenEligibilityStatus {
     }
 }
 
-// -- private utils
-#[inline]
-const fn read_u48(bytes: &[u8; 6]) -> u64 {
-    u64::from_be_bytes([
-        0, 0, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
