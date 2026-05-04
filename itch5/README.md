@@ -11,6 +11,9 @@ Add the crate to your `Cargo.toml`:
 ```toml
 [dependencies]
 itch5 = "0.1"
+
+# Optional: enable chrono for `messages::Timestamp::to_naive_time` method
+# itch5 = {version = "0.1", features = ["chrono"]}  
 ```
 
 Implement [`MessageHandler`] for the message types you care about, then feed bytes to [`Parser`]:
@@ -115,20 +118,16 @@ All 23 ITCH 5.0 message types are covered:
 | `N` | `RetailPriceImprovementIndicator` | Retail interest flags |
 | `O` | `DirectListingwithCapitalRaisePriceDiscoveryMessage` | Direct listing price discovery |
 
+
 ## Price Types
 
 Prices in the ITCH protocol are fixed-point integers. The crate provides two newtype wrappers:
 
-| Type | Bytes | Precision | `into_f64()` divisor |
-|------|-------|-----------|----------------------|
-| `Price4` | 4 | 4 decimal places | 10,000 |
-| `Price8` | 8 | 8 decimal places | 100,000,000 |
+| Type   | Bytes | Precision        |
+|--------|-------|------------------|
+| `Price4` | 4     | 4 decimal places |
+| `Price8` | 8     | 8 decimal places |
 
-```rust
-let price: Price4 = msg.price();
-println!("{:.4}", price.into_f64()); // e.g. "123.4500"
-println!("{}", price.into_u32());    // raw integer value
-```
 
 ## Symbol
 
@@ -144,6 +143,20 @@ let sym: Symbol = "MSFT".parse().unwrap();
 // Compact hash/unhash for use as a map key
 let key: u64 = sym.hash();
 let restored: Symbol = Symbol::from_hash(key);
+```
+
+
+## Timestamp
+
+`Timestamp` is a `u48` representing nanoseconds since midnight.
+The crate provides a `Timestamp` newtype wrapper.
+
+```rust
+let ts: &Timestamp = Timestamp::ref_from_bytes(b"000001").unwrap();
+
+let dur: std::time::Duration = ts.to_dur();
+// requires feature `chrono` to be enabled.
+let naivetime: chrono::NaiveTime = ts.to_naive_time();
 ```
 
 ## Wire Format
