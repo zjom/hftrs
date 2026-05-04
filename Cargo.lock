@@ -90,7 +90,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "env_logger",
- "itch5 0.1.2",
+ "itch5",
  "log",
  "memmap2",
  "moldudp",
@@ -636,17 +636,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itch5"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ece8a663168dac30d3fa49ad4968d2a8847660873ed11ab139b1405f3c61f3c6"
-dependencies = [
- "memmap2",
- "thiserror",
- "zerocopy",
-]
-
-[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -752,7 +741,7 @@ dependencies = [
  "bon",
  "criterion 0.5.1",
  "crossbeam",
- "itch5 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "itch5",
  "memmap2",
  "thiserror",
  "tracing",
@@ -828,7 +817,7 @@ name = "orderbook"
 version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
- "itch5 0.1.2",
+ "itch5",
  "memmap2",
 ]
 
