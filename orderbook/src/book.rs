@@ -32,7 +32,7 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-    /// Default arena and hashmap capacity. Tune via [`with_capacity`].
+    /// Default arena and hashmap capacity. Tune via [`OrderBook::with_capacity`].
     pub fn new() -> Self {
         Self::with_capacity(1 << 16)
     }
