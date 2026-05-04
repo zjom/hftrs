@@ -118,6 +118,11 @@ impl<'a> Parser<'a> {
         self.buf = buf
     }
 
+    #[inline]
+    pub const fn empty() -> Self {
+        Self { buf: &[] }
+    }
+
     /// Iterate over every framed message in the buffer, dispatching each to
     /// the corresponding [`MessageHandler`] method.
     ///
