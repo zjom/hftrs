@@ -108,8 +108,14 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     /// Create a parser over `buf`.
-    pub fn new(buf: &'a [u8]) -> Self {
+    #[inline]
+    pub const fn new(buf: &'a [u8]) -> Self {
         Self { buf }
+    }
+
+    #[inline]
+    pub const fn set_buf(&mut self, buf: &'a [u8]) {
+        self.buf = buf
     }
 
     /// Iterate over every framed message in the buffer, dispatching each to
