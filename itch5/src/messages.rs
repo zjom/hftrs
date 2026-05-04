@@ -1932,18 +1932,20 @@ impl From<u8> for OpenEligibilityStatus {
     }
 }
 
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone)]
+#[derive(
+    FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
+)]
 #[repr(transparent)]
 pub struct Symbol([u8; 8]);
 impl Symbol {
     #[inline]
     pub const fn hash(&self) -> u64 {
-        u64::from_ne_bytes(self.0)
+        u64::from_be_bytes(self.0)
     }
 
     #[inline]
     pub const fn from_hash(hash: u64) -> Symbol {
-        Symbol(hash.to_ne_bytes())
+        Symbol(hash.to_be_bytes())
     }
 
     #[inline]
@@ -1965,5 +1967,18 @@ impl FromStr for Symbol {
         let len = bytes.len().min(8);
         arr[..len].copy_from_slice(&bytes[..len]);
         Ok(Self(arr))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_symbol_eq_unhash() {
+        let input = "aapl";
+        let s: Symbol = input.parse().expect("should not panic");
+
+        assert_eq!(Symbol::from_hash(s.hash()), s)
     }
 }
