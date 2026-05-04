@@ -48,6 +48,27 @@ impl Price8 {
     }
 }
 
+/// Timestamp is u48 representing nano-seconds since midnight of a particular trading day.
+#[derive(
+    FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
+)]
+#[repr(transparent)]
+pub struct Timestamp([u8; 6]);
+impl Timestamp {
+    #[inline]
+    pub const fn to_u64(&self) -> u64 {
+        u64::from_be_bytes([
+            0, 0, self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5],
+        ])
+    }
+
+    #[inline]
+    pub const fn to_dur(&self) -> std::time::Duration {
+        let nanos = self.to_u64();
+        std::time::Duration::new(nanos / 1_000_000_000, (nanos % 1_000_000_000) as u32)
+    }
+}
+
 /// Symbol is a container of a stock's symbol. e.g., AAPL, TSLA, MSFT etc
 ///
 /// Ticker symbols are fixed width (8) uppercased ASCII arrays, right padded with `b' '`.
@@ -91,27 +112,6 @@ impl std::str::FromStr for Symbol {
         let len = bytes.len().min(8);
         arr[..len].copy_from_slice(&bytes[..len]);
         Ok(Self(arr))
-    }
-}
-
-/// Timestamp is u48 representing nano-seconds since midnight of a particular trading day.
-#[derive(
-    FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
-)]
-#[repr(transparent)]
-pub struct Timestamp([u8; 6]);
-impl Timestamp {
-    #[inline]
-    pub const fn to_u64(&self) -> u64 {
-        u64::from_be_bytes([
-            0, 0, self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5],
-        ])
-    }
-
-    #[inline]
-    pub const fn to_dur(&self) -> std::time::Duration {
-        let nanos = self.to_u64();
-        std::time::Duration::new(nanos / 1_000_000_000, (nanos % 1_000_000_000) as u32)
     }
 }
 
