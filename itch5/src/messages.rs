@@ -1981,4 +1981,45 @@ mod tests {
 
         assert_eq!(Symbol::from_hash(s.hash()), s)
     }
+
+    /// ITCH5 wire format right-pads symbols with ASCII spaces. `from_str` must
+    /// produce the same byte pattern so a user-supplied watch symbol hashes to
+    /// the same value as the symbol carried in a StockDirectory message.
+    #[test]
+    fn from_str_pads_with_spaces() {
+        let s: Symbol = "AAPL".parse().unwrap();
+        assert_eq!(&s.0, b"AAPL    ");
+    }
+
+    #[test]
+    fn from_str_hash_matches_wire_symbol() {
+        let from_user: Symbol = "AAPL".parse().unwrap();
+        let from_wire = Symbol(*b"AAPL    ");
+        assert_eq!(from_user.hash(), from_wire.hash());
+        assert_eq!(from_user, from_wire);
+    }
+
+    #[test]
+    fn from_str_uppercases() {
+        let lower: Symbol = "aapl".parse().unwrap();
+        let upper: Symbol = "AAPL".parse().unwrap();
+        assert_eq!(lower.hash(), upper.hash());
+    }
+
+    #[test]
+    fn from_str_full_eight_chars_not_padded() {
+        let s: Symbol = "ABCDEFGH".parse().unwrap();
+        assert_eq!(&s.0, b"ABCDEFGH");
+    }
+
+    #[test]
+    fn from_str_truncates_overlong_input() {
+        let s: Symbol = "ABCDEFGHIJ".parse().unwrap();
+        assert_eq!(&s.0, b"ABCDEFGH");
+    }
+
+    #[test]
+    fn from_str_empty_is_err() {
+        assert!("".parse::<Symbol>().is_err());
+    }
 }
