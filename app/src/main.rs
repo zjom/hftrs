@@ -490,7 +490,7 @@ impl MessageHandler {
         log::debug!("creating MessageHandler for {} symbol(s)", symbols.len());
         MessageHandler {
             registry: Registry::with_capacity(symbols.len()),
-            symbols_to_watch: Some(symbols.iter().map(|s| s.hash()).collect()),
+            symbols_to_watch: Some(symbols.iter().map(|s| s.to_u64()).collect()),
             stats: HandlerStats::default(),
         }
     }
@@ -503,7 +503,7 @@ impl itch5::MessageHandler for MessageHandler {
         if self
             .symbols_to_watch
             .as_ref()
-            .map_or(true, |r| r.contains(&stock.hash()))
+            .map_or(true, |r| r.contains(&stock.to_u64()))
         {
             log::info!(
                 "registering symbol {} with locate={} (total_registered={})",
