@@ -300,14 +300,14 @@ impl StockDirectory {
 
     /// Identifies the security class for the issue as assigned by Nasdaq. See Appendix for allowable values.
     #[inline]
-    pub const fn issue_classification(&self) -> u8 {
-        self.issue_classification
+    pub const fn issue_classification(&self) -> IssueClassificationCode {
+        IssueClassificationCode::from_byte(self.issue_classification)
     }
 
     /// Identifies the security sub-type for the issue as assigned by Nasdaq. See Appendix for allowable values.
     #[inline]
-    pub const fn issue_sub_type(&self) -> &[u8] {
-        &self.issue_sub_type
+    pub const fn issue_sub_type(&self) -> IssueSubTypeCode {
+        IssueSubTypeCode::from_bytes(self.issue_sub_type)
     }
 
     /// Denotes if an issue or quoting participant record is set-up in Nasdaq systems in a live/production, test, or demo state.
@@ -2783,6 +2783,200 @@ impl std::fmt::Display for TradingResumptionReason {
             }
         };
         f.write_str(s)
+    }
+}
+
+/// Codes for Issue Classification Values
+#[derive(Debug)]
+#[repr(u8)]
+pub enum IssueClassificationCode {
+    AmericanDepositaryShare = b'A',
+    Bond = b'B',
+    CommonStock = b'C',
+    DepositoryReceipt = b'F',
+    OneFourFourA = b'I',
+    LimitedPartnership = b'L',
+    Notes = b'N',
+    OrdinaryShare = b'O',
+    PreferredStock = b'P',
+    OtherSecurities = b'Q',
+    Right = b'R',
+    SharesofBeneficialInterest = b'S',
+    ConvertibleDebenture = b'T',
+    Unit = b'U',
+    UnitsBenifInt = b'V',
+    Warrant = b'W',
+    Unknown(u8),
+}
+
+impl IssueClassificationCode {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
+        match value {
+            b'A' => Self::AmericanDepositaryShare,
+            b'B' => Self::Bond,
+            b'C' => Self::CommonStock,
+            b'F' => Self::DepositoryReceipt,
+            b'I' => Self::OneFourFourA,
+            b'L' => Self::LimitedPartnership,
+            b'N' => Self::Notes,
+            b'O' => Self::OrdinaryShare,
+            b'P' => Self::PreferredStock,
+            b'Q' => Self::OtherSecurities,
+            b'R' => Self::Right,
+            b'S' => Self::SharesofBeneficialInterest,
+            b'T' => Self::ConvertibleDebenture,
+            b'U' => Self::Unit,
+            b'V' => Self::UnitsBenifInt,
+            b'W' => Self::Warrant,
+            _ => Self::Unknown(value),
+        }
+    }
+}
+
+impl From<u8> for IssueClassificationCode {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
+    }
+}
+
+/// Codes for Issue Sub Type Values
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueSubTypeCode {
+    PreferredTrustSecurities,
+    AlphaIndexETNs,
+    IndexBasedDerivative,
+    CommonShares,
+    CommodityBasedTrustShares,
+    CommodityFuturesTrustShares,
+    CommodityLinkedSecurities,
+    CommodityIndexTrustShares,
+    CollateralizedMortgageObligation,
+    CurrencyTrustShares,
+    CommodityCurrencyLinkedSecurities,
+    CurrencyWarrants,
+    GlobalDepositaryShares,
+    ETFPortfolioDepositaryReceipt,
+    EquityGoldShares,
+    ETNEquityIndexLinkedSecurities,
+    NextSharesExchangeTradedManagedFund,
+    ExchangeTradedNotes,
+    EquityUnits,
+    HOLDRS,
+    ETNFixedIncomeLinkedSecurities,
+    ETNFuturesLinkedSecurities,
+    GlobalShares,
+    ETFIndexFundShares,
+    InterestRate,
+    IndexWarrant,
+    IndexLinkedExchangeableNotes,
+    CorporateBackedTrustSecurity,
+    ContingentLitigationRight,
+    LimitedLiabilityCompany,
+    EquityBasedDerivative,
+    ManagedFundShares,
+    ETNMultiFactorIndexLinkedSecurities,
+    ManagedTrustSecurities,
+    NYRegistryShares,
+    OpenEndedMutualFund,
+    PrivatelyHeldSecurity,
+    PoisonPill,
+    PartnershipUnits,
+    ClosedEndFunds,
+    RegS,
+    CommodityRedeemableCommodityLinkedSecurities,
+    ETNRedeemableFuturesLinkedSecurities,
+    REIT,
+    CommodityRedeemableCurrencyLinkedSecurities,
+    SEED,
+    SpotRateClosing,
+    SpotRateIntraday,
+    TrackingStock,
+    TrustCertificates,
+    TrustUnits,
+    Portal,
+    ContingentValueRight,
+    TrustIssuedReceipts,
+    WorldCurrencyOption,
+    Trust,
+    Other,
+    NotApplicable,
+    Unknown([u8; 2]),
+}
+
+impl IssueSubTypeCode {
+    #[inline]
+    pub const fn from_bytes(value: [u8; 2]) -> Self {
+        // ITCH 2-byte alphanumeric fields are left-justified and space-padded on the right.
+        match &value {
+            b"A " => Self::PreferredTrustSecurities,
+            b"AI" => Self::AlphaIndexETNs,
+            b"B " => Self::IndexBasedDerivative,
+            b"C " => Self::CommonShares,
+            b"CB" => Self::CommodityBasedTrustShares,
+            b"CF" => Self::CommodityFuturesTrustShares,
+            b"CL" => Self::CommodityLinkedSecurities,
+            b"CM" => Self::CommodityIndexTrustShares,
+            b"CO" => Self::CollateralizedMortgageObligation,
+            b"CT" => Self::CurrencyTrustShares,
+            b"CU" => Self::CommodityCurrencyLinkedSecurities,
+            b"CW" => Self::CurrencyWarrants,
+            b"D " => Self::GlobalDepositaryShares,
+            b"E " => Self::ETFPortfolioDepositaryReceipt,
+            b"EG" => Self::EquityGoldShares,
+            b"EI" => Self::ETNEquityIndexLinkedSecurities,
+            b"EM" => Self::NextSharesExchangeTradedManagedFund,
+            b"EN" => Self::ExchangeTradedNotes,
+            b"EU" => Self::EquityUnits,
+            b"F " => Self::HOLDRS,
+            b"FI" => Self::ETNFixedIncomeLinkedSecurities,
+            b"FL" => Self::ETNFuturesLinkedSecurities,
+            b"G " => Self::GlobalShares,
+            b"I " => Self::ETFIndexFundShares,
+            b"IR" => Self::InterestRate,
+            b"IW" => Self::IndexWarrant,
+            b"IX" => Self::IndexLinkedExchangeableNotes,
+            b"J " => Self::CorporateBackedTrustSecurity,
+            b"L " => Self::ContingentLitigationRight,
+            b"LL" => Self::LimitedLiabilityCompany,
+            b"M " => Self::EquityBasedDerivative,
+            b"MF" => Self::ManagedFundShares,
+            b"ML" => Self::ETNMultiFactorIndexLinkedSecurities,
+            b"MT" => Self::ManagedTrustSecurities,
+            b"N " => Self::NYRegistryShares,
+            b"O " => Self::OpenEndedMutualFund,
+            b"P " => Self::PrivatelyHeldSecurity,
+            b"PP" => Self::PoisonPill,
+            b"PU" => Self::PartnershipUnits,
+            b"Q " => Self::ClosedEndFunds,
+            b"R " => Self::RegS,
+            b"RC" => Self::CommodityRedeemableCommodityLinkedSecurities,
+            b"RF" => Self::ETNRedeemableFuturesLinkedSecurities,
+            b"RT" => Self::REIT,
+            b"RU" => Self::CommodityRedeemableCurrencyLinkedSecurities,
+            b"S " => Self::SEED,
+            b"SC" => Self::SpotRateClosing,
+            b"SI" => Self::SpotRateIntraday,
+            b"T " => Self::TrackingStock,
+            b"TC" => Self::TrustCertificates,
+            b"TU" => Self::TrustUnits,
+            b"U " => Self::Portal,
+            b"V " => Self::ContingentValueRight,
+            b"W " => Self::TrustIssuedReceipts,
+            b"WC" => Self::WorldCurrencyOption,
+            b"X " => Self::Trust,
+            b"Y " => Self::Other,
+            b"Z " => Self::NotApplicable,
+            _ => Self::Unknown(value),
+        }
+    }
+}
+
+impl From<[u8; 2]> for IssueSubTypeCode {
+    #[inline]
+    fn from(value: [u8; 2]) -> Self {
+        Self::from_bytes(value)
     }
 }
 
