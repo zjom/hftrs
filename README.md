@@ -192,28 +192,90 @@ omitting them was a choice, not an oversight:
 
 ## Performance notes
 
-Each subcrate ships a [Criterion] benchmark suite. The shared release
-profile uses `lto = "fat"`, a single codegen unit, and `panic = "abort"`;
-the bench profile inherits that and adds debug symbols so `perf` and
-flamegraphs work without rebuilding. For stable numbers, pin to an
-isolated core:
+The workspace ships a [Criterion] benchmark suite that exercises each
+component independently and the integrated pipeline as a whole. The
+shared release profile uses `lto = "fat"`, a single codegen unit, and
+`panic = "abort"`; the bench profile inherits that and adds debug
+symbols so `perf` and flamegraphs work without rebuilding. For stable
+numbers, pin to an isolated core:
 
 ```sh
-taskset -c 3 cargo bench
+taskset -c 3 cargo bench --workspace
 ```
 
-What each suite covers:
+The benchmarks are split into four suites, each layered on the next:
 
-- **`orderbook`** — fresh fills, top-of-book queries, full
-  delete-and-readd cycles (which exercise the slab free list under the
-  steady-state path), and partial executes at the top of book.
-- **`itch5`** — full-file replay of a 1M-message recorded feed, reported
-  in messages/sec and bytes/sec.
-- **`moldudp`** — receive-path benchmarks against the in-process test
-  server.
+### Component microbenchmarks
 
-Concrete numbers will be filled in alongside the platform they were taken
-on.
+| Suite | What it measures |
+|---|---|
+| `cargo bench -p itch5` | wire-format framing in isolation; per-message-type dispatch (`A`/`F`/`E`/`X`/`D`/`U`/`P`); a no-op-handler floor and a counting-handler ceiling against a 1M-message recorded sample; zero-copy field accessor cost (`Price4`, `Timestamp`, `Symbol`). |
+| `cargo bench -p orderbook` | nanosecond-resolution single-op latency for `add` / `delete` / `cancel` / `execute_partial` / `execute_full` / `replace` against a steady-state book; top-of-book and depth(10) queries scaled across book sizes 1k → 1M; bulk inserts; fragmented arena refills that exercise the slab free list. |
+| `cargo bench -p moldudp` | packet header decode and message-iter cost varying message density (1 / 10 / 100 / 1000 per packet); end-to-end client receive throughput for several traffic shapes including ITCH-sized (38 B) batched packets; gap detection + retransmission round-trip. |
+
+### Integrated pipeline
+
+`cargo bench -p app --bench end_to_end` wires the full stack together —
+`MoldUDP64Server` → kernel UDP → `MoldUDP64` client → ITCH parser →
+per-symbol order books — and replays a real ITCH 5.0 file through it.
+This is the closest thing here to "what does the running system do
+under load". By contrast, the orderbook suite's `itch_replay`
+benchmark drives the parser and book directly without any UDP transit,
+so the gap between the two numbers is exactly the cost of the network
+layer (kernel UDP send/recv, gap detection, channel handoff) on the
+host the benchmark ran on.
+
+### Methodology
+
+- **Real data.** A 1M-message recorded ITCH 5.0 feed lives at
+  `data/itch_1000_000` and is the input for every realistic-workload
+  benchmark. Override the path by setting `ITCH5_BENCH_FILE`. If the
+  file is missing, the data-driven benches print a notice and skip,
+  so synthetic-only benches still run.
+- **Throughput in two units.** Where it makes sense, benches report
+  both `Throughput::Elements` (events/sec) and `Throughput::Bytes`
+  (bytes/sec). Bytes are the right unit when comparing against NIC
+  line rate; elements are the right unit when comparing against
+  exchange message rate.
+- **Single-op latency via `iter_custom`.** Hot-path microbenchmarks
+  in the orderbook suite use Criterion's `iter_custom` to time
+  hundreds of ops per measurement window, then divide; this reduces
+  per-iteration overhead to noise and gives nanosecond-resolution
+  per-op numbers.
+- **Steady state.** Every benchmark that touches the order book runs
+  against a pre-warmed, steady-state book (default: 50k resting
+  orders) rather than an empty one — the cold-start path is not
+  representative of what an HFT consumer will see.
+- **Pre-faulting.** mmap'd inputs are XOR-walked once before the
+  measurement loop so the first iteration doesn't pay for major
+  page faults.
+- **Backpressure.** The end-to-end pipeline benchmark sends in
+  bounded chunks and drains each chunk before queueing the next, so
+  the kernel UDP buffer can't overflow and silently drop packets.
+  This trades peak throughput for honesty about delivered rate.
+
+### Caveats
+
+These benchmarks measure the system on the host they ran on. They do
+*not* characterise:
+
+- Production NIC behavior — there is no kernel-bypass path here, so
+  the end-to-end suite is bounded by per-syscall UDP cost on
+  loopback. A real deployment behind DPDK / `AF_XDP` / Solarflare
+  EFVI will see materially different numbers.
+- Real multicast contention. The test server delivers over loopback
+  unicast for portability; you will see different jitter against an
+  IGMP-joined group on a switched network.
+- Long-tail latency under live exchange data. Criterion gives mean
+  and confidence intervals; for production hardening, follow up with
+  a histogram / HDR-style measurement against a recorded session.
+
+### Concrete numbers
+
+Filled in alongside the platform they were taken on. Run `cargo bench
+--workspace` locally and write the relevant `taskset` invocation,
+kernel version, and CPU model next to the numbers — they only mean
+something with that context.
 
 ## Building and running
 
