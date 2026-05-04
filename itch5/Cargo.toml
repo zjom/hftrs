@@ -12,6 +12,7 @@ zerocopy = { version = "0.8", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
+memmap2 = "0.9.10"
 
 
 [[bench]]
