@@ -45,7 +45,7 @@ impl itch5::MessageHandler for Handler {
                 },
                 price: msg.price().into_i64(),
                 qty: msg.shares() as u64,
-                ts: msg.timestamp(),
+                ts: msg.timestamp().to_u64(),
             })
             .unwrap();
         ControlFlow::Continue(())
@@ -68,7 +68,7 @@ impl itch5::MessageHandler for Handler {
                 },
                 price: msg.price().into_i64(),
                 qty: msg.shares() as u64,
-                ts: msg.timestamp(),
+                ts: msg.timestamp().to_u64(),
             })
             .unwrap();
         ControlFlow::Continue(())
@@ -79,7 +79,7 @@ impl itch5::MessageHandler for Handler {
             .execute(
                 msg.order_reference_number(),
                 msg.executed_shares() as u64,
-                msg.timestamp(),
+                msg.timestamp().to_u64(),
             )
             .unwrap();
 
@@ -91,7 +91,7 @@ impl itch5::MessageHandler for Handler {
             .execute(
                 msg.order_reference_number(),
                 msg.executed_shares() as u64,
-                msg.timestamp(),
+                msg.timestamp().to_u64(),
             )
             .unwrap();
 
@@ -117,7 +117,7 @@ impl itch5::MessageHandler for Handler {
                 msg.new_order_reference_number(),
                 msg.price().into_i64(),
                 msg.shares() as u64,
-                msg.timestamp(),
+                msg.timestamp().to_u64(),
             )
             .unwrap();
 
