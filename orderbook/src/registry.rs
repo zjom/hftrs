@@ -54,6 +54,12 @@ impl Registry {
     pub fn iter(&self) -> Iter<'_> {
         Iter::new(self)
     }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(self.books.len(), self.symbols.len());
+        self.books.len()
+    }
 }
 pub struct Iter<'a> {
     iter: std::collections::hash_map::Iter<'a, u16, Symbol>,
