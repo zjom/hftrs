@@ -9,7 +9,6 @@ edition = "2024"
 [dependencies]
 bon = "3.9.1"
 crossbeam = "0.8.4"
-thiserror = "2.0.18"
 tracing = "0.1.44"
 zerocopy = "0.8.48"
 
