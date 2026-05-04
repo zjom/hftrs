@@ -16,3 +16,6 @@ rustc-ice-*.txt
 
 # Local data
 data/
+
+# samply artifact
+profile.json.gz
