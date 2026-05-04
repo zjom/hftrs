@@ -1,17 +1,7 @@
+use crate::error::ParseError;
 use crate::messages::*;
 use std::ops::ControlFlow;
-use thiserror::Error;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
-
-#[derive(Debug, PartialEq, Eq, Error)]
-pub enum ParseError {
-    #[error("attempted to parse empty input")]
-    EmptyBuffer,
-    #[error("unknown message type {0}")]
-    UnknownMessageType(u8),
-    #[error("malformed input data")]
-    MalformedData,
-}
 
 /// Visitor called by [`Parser`] for each decoded ITCH 5.0 message.
 ///

@@ -631,7 +631,6 @@ version = "0.1.3"
 dependencies = [
  "criterion 0.8.2",
  "memmap2",
- "thiserror",
  "zerocopy",
 ]
 

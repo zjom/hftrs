@@ -46,7 +46,8 @@
 //!
 //! [Nasdaq TotalView-ITCH 5.0]: https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf
 
+mod error;
 pub mod messages;
 mod parse;
-
-pub use parse::{MessageHandler, ParseError, Parser, parse_one};
+pub use error::ParseError;
+pub use parse::{MessageHandler, Parser, parse_one};
