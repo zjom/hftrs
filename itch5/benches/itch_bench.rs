@@ -19,6 +19,8 @@ fn bench_parse_one_million_msgs(c: &mut Criterion) {
     let path = env::var("ITCH5_BENCH_1M_FILE").expect("ITCH5_BENCH_1M_FILE env var not set");
     let file = File::open(&path).unwrap();
     let mmap = unsafe { Mmap::map(&file).unwrap() };
+    // load all pages
+    hint::black_box(mmap.iter().fold(0, |a, b| a ^ b));
 
     let mut group = c.benchmark_group("itch5");
     group.throughput(Throughput::ElementsAndBytes {
@@ -29,9 +31,11 @@ fn bench_parse_one_million_msgs(c: &mut Criterion) {
     group.bench_function("parse_1M_msgs", |b| {
         b.iter(|| {
             let mut visitor = Handler::default();
-            itch5::Parser::new(&mmap)
-                .parse_stream(&mut visitor)
-                .unwrap();
+            hint::black_box(
+                itch5::Parser::new(&mmap)
+                    .parse_stream(&mut visitor)
+                    .unwrap(),
+            );
             hint::black_box(visitor.trades);
         })
     });
