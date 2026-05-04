@@ -1,22 +1,21 @@
-//! Test server for the MoldUDP64 client.
+//! Test server for MoldUDP64 client development and testing.
 //!
-//! Broadcasts MoldUDP64 packets out one socket and answers re-request
-//! traffic on another. Intended for tests, fuzzing, and local experimentation
-//! — not production. The server keeps every individual message in an
-//! in-memory log keyed by sequence number, so it can synthesise a response
-//! to any range the client asks for without caring about original packet
-//! boundaries.
+//! Broadcasts MoldUDP64 packets on one socket and answers re-request traffic
+//! on another. Intended for unit tests, integration tests, and local
+//! experimentation — not for production deployment. The server stores every
+//! individual message in an in-memory log keyed by sequence number, so it
+//! can synthesise a response to any range the client asks for without caring
+//! about original packet boundaries.
 //!
-//! Heartbeats are emitted automatically once per second. After [`ServerHandle::stop_session`]
-//! (which sends [`ServerCommand::StopSession`]) the periodic packet switches
-//! from a heartbeat to an end-of-session, and `Send` / `SendDropped` are
-//! refused — the re-request thread keeps serving retransmissions. The sender
-//! thread exits when all `ServerHandle`s are dropped.
+//! Heartbeats are emitted automatically at `heartbeat_interval` (default: 1 s).
+//! After [`ServerHandle::shutdown`] the periodic packet switches from a
+//! heartbeat to an end-of-session, and [`ServerHandle::send`] /
+//! [`ServerHandle::send_dropped`] are refused. The re-request thread keeps
+//! running until the server is dropped.
 //!
-//! Typical wiring against the client:
+//! # Wiring against the client
 //!
 //! ```ignore
-//! // Server
 //! let server = MoldUDP64Server::builder()
 //!     .multicast_addr("239.1.2.3:5000".parse().unwrap())
 //!     .rerequest_bind_addr("127.0.0.1:6000".parse().unwrap())
@@ -24,11 +23,11 @@
 //!     .build();
 //! let h = server.start()?;
 //!
-//! h.send(vec![b"hello".to_vec()]);            // seq 1
-//! h.send_dropped(vec![b"missing".to_vec()]);  // seq 2 -- client will re-request
-//! h.send(vec![b"world".to_vec()]);            // seq 3 -- triggers gap detection
-//! // heartbeats are sent automatically every second
-//! h.shutdown();                               // end-of-session now replaces heartbeats
+//! h.send(vec![b"hello".to_vec()]);            // seq 1 — live broadcast
+//! h.send_dropped(vec![b"missing".to_vec()]);  // seq 2 — stored only; client must re-request
+//! h.send(vec![b"world".to_vec()]);            // seq 3 — triggers gap detection
+//! // Heartbeats are sent automatically every second.
+//! h.shutdown();                               // End-of-session replaces heartbeats.
 //! ```
 
 use std::collections::BTreeMap;
@@ -49,93 +48,170 @@ const HEADER_LEN: usize = 20;
 
 type DB = Mutex<BTreeMap<u64, Vec<u8>>>;
 
-/// Commands the running server processes from its input channel.
+/// Commands processed by the running sender thread.
+///
+/// Sent via [`ServerHandle`]; not normally constructed directly.
 #[derive(Debug, Clone)]
 pub enum ServerCommand {
-    /// Build and broadcast a packet containing these messages.
-    /// The packet is also stored in the retransmission log.
+    /// Build and broadcast a packet containing these messages, and store them
+    /// in the retransmission log. Advances the sequence number by the number
+    /// of messages.
     Send(Vec<Vec<u8>>),
-    /// Stage a packet in the log without broadcasting it. The next `Send`
-    /// will leave a gap in the live stream that the client must re-request.
+    /// Store messages in the retransmission log *without* broadcasting them.
+    /// The next [`Send`](Self::Send) will leave a gap in the live stream that
+    /// the client must fill via a re-request.
     SendDropped(Vec<Vec<u8>>),
-    /// Send a heartbeat packet immediately (msg_count = 0). Heartbeats are
-    /// also sent automatically once per second; this is for tests that need
-    /// to force one at a specific moment. Does not advance the seq num.
-    /// After [`StopSession`](Self::StopSession) this becomes an end-of-session.
+    /// Immediately broadcast a heartbeat (`msg_count = 0`). Heartbeats are
+    /// also emitted automatically on each `heartbeat_interval` tick; this is
+    /// for tests that need one at a specific moment. Does not advance the
+    /// sequence number. After [`StopSession`](Self::StopSession) this sends an
+    /// end-of-session instead, matching the periodic behaviour.
     Heartbeat,
-    /// Send a End-of-session packet (msg_count = 0xFFFF). Automatically sent in place of
-    /// heartbeats after [`StopSession`](Self::StopSession).
-    /// See [`Heartbeat`](Self::Heartbeat).
+    /// Immediately broadcast an end-of-session packet (`msg_count = 0xFFFF`).
+    /// End-of-session packets are sent automatically in place of heartbeats
+    /// after [`StopSession`](Self::StopSession).
     EndOfSession,
-    /// Server sends End-of-session packets in place of heartbeats.
-    /// No new messages can be sent on this session.
-    /// The re-request thread keeps running.
+    /// Transition the session to the stopped state. From this point:
+    ///
+    /// - Periodic heartbeats are replaced with end-of-session packets.
+    /// - [`Send`](Self::Send) and [`SendDropped`](Self::SendDropped) are
+    ///   refused (logged as warnings).
+    /// - The re-request thread continues to serve retransmission requests.
     StopSession,
-    /// Changes session ident sent. Does not send End-of-session packet.
-    /// Up to caller to inform clients of state change via [`StopSession`](Self::StopSession).
+    /// Change the session identifier used on outgoing packets. Does not send
+    /// an end-of-session for the previous session; call
+    /// [`StopSession`](Self::StopSession) first if clients need to know.
     ChangeSession(String),
 }
 
+/// Builder-configured MoldUDP64 test server.
+///
+/// Use [`MoldUDP64Server::builder()`] to construct, then call [`start`] to
+/// spawn the background threads and obtain a [`ServerHandle`].
+///
+/// [`start`]: MoldUDP64Server::start
 #[derive(Builder)]
 pub struct MoldUDP64Server {
-    /// Destination for live packets. Use the multicast group + port for real
-    /// runs; for tests over loopback unicast set this to the client's
+    /// Destination for live broadcast packets. Use a multicast group + port
+    /// for realistic tests; for pure loopback tests set this to the client's
     /// downstream bind address.
     multicast_addr: SocketAddrV4,
-    /// Outbound interface for multicast. Ignored when the destination is
-    /// unicast.
+    /// Outbound interface for multicast sends. Has no effect when
+    /// `multicast_addr` is a unicast address.
     #[builder(default = Ipv4Addr::UNSPECIFIED)]
     interface_addr: Ipv4Addr,
-    /// Local bind address for the unicast re-request server. The client
-    /// sends RetransmissionRequest datagrams here.
+    /// Local address the re-request server listens on. The client sends
+    /// [`RetransmissionRequest`] datagrams here.
+    ///
+    /// [`RetransmissionRequest`]: crate::RetransmissionRequest
     rerequest_bind_addr: SocketAddr,
-    /// 10-byte session identifier. Strings shorter than 10 bytes are
-    /// right-padded with spaces; longer strings are truncated.
+    /// Session identifier for outgoing packets. Strings shorter than 10 bytes
+    /// are right-padded with spaces; longer strings are truncated to 10 bytes.
     #[builder(into)]
     session: String,
+    /// Maximum UDP payload for outgoing packets.
+    /// Default: `1452` (1500 MTU − 20 IP − 8 UDP − 20 MoldUDP64 header).
+    /// Messages that individually exceed this limit are placed in their own
+    /// packet.
     #[builder(default = 1452)]
-    /// Max size of frame transmitted.
-    /// Default is 1452: 1500 - 20 (IP) - 8 (UDP) - 20 (Mold header)
     max_payload: usize,
+    /// How often the server sends a periodic heartbeat (or end-of-session
+    /// after shutdown). Default: 1 second.
     #[builder(default = Duration::from_secs(1), into)]
     heartbeat_interval: Duration,
-    /// Number of commands in command queue before blocking.
-    /// Set to 0 for unbuffered.
+    /// Capacity of the internal command queue. Default: `1_000_000`.
+    /// Set to `0` for an unbounded queue.
     #[builder(default = 1_000_000)]
     command_queue_size: usize,
-    /// Initial sequence number of packets.
+    /// Sequence number assigned to the very first message. Default: `1`.
     #[builder(default = 1)]
     seq_num: u64,
 }
 
+/// Handle to a running [`MoldUDP64Server`].
+///
+/// All methods send a command to the server's background sender thread.
+/// Sending is fire-and-forget: if the command queue is full the call returns
+/// silently (an error is logged internally).
+///
+/// The server sender thread exits when all `ServerHandle` clones are dropped.
 pub struct ServerHandle {
     pub tx: Sender<ServerCommand>,
 }
 
 impl ServerHandle {
+    /// Broadcast `msgs` as a downstream packet and store them in the
+    /// retransmission log. Advances the session's sequence number by
+    /// `msgs.len()`.
+    ///
+    /// Has no effect (and logs a warning) if the session has been stopped.
     pub fn send(&self, msgs: Vec<Vec<u8>>) {
         let _ = self.tx.send(ServerCommand::Send(msgs));
     }
+
+    /// Store `msgs` in the retransmission log *without* broadcasting them,
+    /// creating a deliberate gap in the live stream. Advances the sequence
+    /// number by `msgs.len()`.
+    ///
+    /// Useful for simulating packet loss so the client's gap-detection and
+    /// re-request logic can be exercised.
+    ///
+    /// Has no effect (and logs a warning) if the session has been stopped.
     pub fn send_dropped(&self, msgs: Vec<Vec<u8>>) {
         let _ = self.tx.send(ServerCommand::SendDropped(msgs));
     }
+
+    /// Force an immediate heartbeat broadcast outside the normal tick interval.
+    ///
+    /// After [`shutdown`](Self::shutdown), this sends an end-of-session packet
+    /// instead, matching the behaviour of the automatic periodic tick.
     pub fn heartbeat(&self) {
         let _ = self.tx.send(ServerCommand::Heartbeat);
     }
+
+    /// Force an immediate end-of-session broadcast.
+    ///
+    /// This does not stop the session; use [`shutdown`](Self::shutdown) for
+    /// that. This method is for tests that need to inject an explicit
+    /// end-of-session at a specific moment.
     pub fn end_of_session(&self) {
         let _ = self.tx.send(ServerCommand::EndOfSession);
     }
 
+    /// Change the session identifier for all subsequent outgoing packets.
+    ///
+    /// Does not emit an end-of-session for the previous session. If clients
+    /// need to know the session has ended, call [`shutdown`](Self::shutdown)
+    /// before changing the session.
+    ///
+    /// Has no effect (and logs a warning) if the session has been stopped.
     pub fn change_session(&self, session: String) {
         let _ = self.tx.send(ServerCommand::ChangeSession(session));
     }
 
+    /// Stop the session: periodic heartbeats are replaced with end-of-session
+    /// packets and no further messages can be sent.
+    ///
+    /// The re-request thread continues running so clients can still fill gaps
+    /// while the end-of-session window is open.
     pub fn shutdown(&self) {
         let _ = self.tx.send(ServerCommand::StopSession);
     }
 }
 
 impl MoldUDP64Server {
+    /// Spawn the server's background threads and return a [`ServerHandle`].
+    ///
+    /// Two threads are started:
+    ///
+    /// 1. **Sender** — processes commands from the handle, broadcasts
+    ///    packets, and emits periodic heartbeats.
+    /// 2. **Re-request responder** — listens for retransmission requests and
+    ///    unicasts responses synthesised from the in-memory log.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either socket cannot be created or bound.
     pub fn start(&self) -> io::Result<ServerHandle> {
         let downstream = UdpSocket::bind(SocketAddrV4::new(self.interface_addr, 0))?;
         let rereq = UdpSocket::bind(self.rerequest_bind_addr)?;
@@ -143,7 +219,7 @@ impl MoldUDP64Server {
     }
 
     /// Test seam — accepts pre-bound sockets so tests can drive the server
-    /// over loopback unicast without needing multicast support. The
+    /// over loopback unicast without needing multicast kernel support. The
     /// `multicast_addr` field is still used as the *destination* for sends.
     pub fn start_with_sockets(
         &self,

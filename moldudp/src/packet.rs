@@ -3,100 +3,169 @@ use zerocopy::{
     big_endian::{U16, U64},
 };
 
-/// Heartbeats are sent periodically by the server so receivers can sense packet loss even during times of low traffic.
-/// Typically, these packets are transmitted once per second and contain the next expected Sequence Number.
-/// A Heartbeat packet is a MoldUDP64 packet with a Message Count of zero.
+/// `msg_count` value that identifies a heartbeat packet.
+///
+/// Heartbeats are sent periodically (typically once per second) by the server
+/// so receivers can sense packet loss even during times of low traffic. A
+/// heartbeat packet carries the sequence number of the *next* expected message
+/// but contains no message data.
 pub const HEARTBEAT_IDENT: u16 = 0;
 
-/// When the current session is complete, Downstream Packets are sent with a Message Count of `0xFFFF` for a short while in place of Heartbeats.
-/// These Downstream Packets contain the next expected Sequence Number, just like Heartbeats.
-/// While the End of Session messages persist, re-requests may be made on the current session.
-/// This is the last chance to ensure that all messages have been received.
+/// `msg_count` value that identifies an end-of-session packet.
+///
+/// When the current session is complete, the server sends downstream packets
+/// with this value in place of heartbeats for a short window. Like heartbeats,
+/// they carry the next expected sequence number but no message data. While
+/// these packets are flowing, clients may still re-request missing messages;
+/// it is the last opportunity to close any gaps.
 pub const END_OF_SESSION_IDENT: u16 = u16::MAX;
 
+/// The type of a downstream packet based on its `msg_count` field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PacketKind {
+    /// A normal data packet carrying one or more messages
+    /// (`msg_count > 0` and `msg_count != 0xFFFF`).
     Standard,
+    /// A liveness probe with no messages (`msg_count == 0`).
+    /// Contains the next expected sequence number.
     Heartbeat,
+    /// The session has ended (`msg_count == 0xFFFF`).
+    /// Contains the next expected sequence number. Re-requests are still
+    /// accepted while these packets are being sent.
     EndOfSession,
 }
 
-/// A Session is a sequence of one or more messages.
-/// While a single session can last indefinitely, typically the application will
-/// define a session to logically group messages together based on time delimitation.
-/// Once a session is terminated, no more messages can be sent on that session.
-/// Depending on the design of the MoldUDP64 system and the application,
-/// receivers may still be able to re-request messages from a terminated session.
-/// A session is considered active if it has started but not yet been terminated.
-/// Indicates the session to which this packet belongs.
+/// Whether the session associated with a packet is still accepting messages.
+///
+/// A session is *active* from its first message until [`ServerHandle::shutdown`]
+/// is called. Once a session ends, no new messages can be sent on it.
+///
+/// [`ServerHandle::shutdown`]: crate::ServerHandle::shutdown
 pub enum SessionStatus {
+    /// The session has started and has not yet been terminated.
     Active,
+    /// The session is over; the packet's `msg_count` is `0xFFFF`.
     Inactive,
 }
 
 /// Fixed 20-byte downstream packet header.
 ///
+/// All multi-byte fields are big-endian (network byte order).
+///
 /// Layout (per the MoldUDP64 spec):
-/// - `[0..10]`  Session
-/// - `[10..18]` Sequence Number (big-endian u64)
-/// - `[18..20]` Message Count   (big-endian u16)
+///
+/// ```text
+/// Offset  Size  Field
+/// ───────────────────────────────────────────────────────
+///  0       10   Session identifier (ASCII, space-padded)
+/// 10        8   Sequence number of first message (u64)
+/// 18        2   Message count (u16)
+/// ───────────────────────────────────────────────────────
+/// ```
+///
+/// This type is also used as a [`RetransmissionPacket`] when requesting a
+/// gap fill: set `session` and `seq_num` to the start of the gap and
+/// `msg_count` to the number of messages wanted (capped at `u16::MAX`).
+///
+/// [`RetransmissionPacket`]: crate::RetransmissionPacket
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(C)]
 pub struct PacketHeader {
+    /// 10-byte ASCII session identifier, right-padded with spaces.
     pub session: [u8; 10],
+    /// Sequence number of the first message carried in this packet.
     pub seq_num: U64,
+    /// Number of message blocks that follow the header.
+    /// `0` = heartbeat; `0xFFFF` = end-of-session.
     pub msg_count: U16,
 }
 
-/// Full downstream packet: a header followed by 0..N message blocks.
+/// A full downstream packet: a 20-byte header followed by 0–N message blocks.
 ///
-/// Construct one with [`Packet::parse`] or directly via [`Packet::ref_from_bytes`].
-/// A MoldUDP64 transmitter sends “downstream” packets that are received by MoldUDP64 listeners. A MoldUDP64 packet may contain a payload of 0 or more data stream messages.
-///Each MoldUDP64 packet consists of a Downstream Packet Header and of a series of Message Blocks. The Message Blocks carry the actual data of the stream. See [`Message`].
+/// `Packet` is a [dynamically-sized type](https://doc.rust-lang.org/reference/dynamically-sized-types.html)
+/// built with [`zerocopy`]. Construct a zero-copy reference from a byte slice
+/// using [`Packet::parse`] or the lower-level [`zerocopy::FromBytes::ref_from_bytes`].
+///
+/// # Example
+///
+/// ```no_run
+/// use moldudp::{FromBytes, Packet, PacketKind};
+///
+/// fn handle(raw: &[u8]) {
+///     let packet = Packet::ref_from_bytes(raw).expect("invalid packet");
+///
+///     match packet.packet_kind() {
+///         PacketKind::Heartbeat | PacketKind::EndOfSession => return,
+///         PacketKind::Standard => {}
+///     }
+///
+///     for msg in packet.iter() {
+///         // msg.data() is a zero-copy view into `raw` — no allocation.
+///         process(msg.data());
+///     }
+/// }
+///
+/// fn process(_data: &[u8]) {}
+/// ```
 #[derive(Debug, FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(C)]
 pub struct Packet {
     pub header: PacketHeader,
-    /// Raw bytes of the messages block. Iterate via [`Packet::iter`].
+    /// Raw bytes of the message blocks. Iterate via [`Packet::iter`] rather
+    /// than accessing this field directly.
     pub messages: [u8],
 }
 
 impl Packet {
-    /// Wraps the bytes of a downstream packet without copying.
-    /// Returns `None` if `bytes.len() < 20`.
+    /// The minimum valid wire size of a MoldUDP64 packet (header only, no messages).
+    pub(crate) const MIN_PACKET_LEN: usize = 20;
+
+    /// Wraps `bytes` as a `&Packet` without copying.
+    ///
+    /// Returns `None` if `bytes.len() < 20` or if the slice cannot be
+    /// interpreted as a valid packet layout.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Option<&Self> {
         Self::ref_from_bytes(bytes).ok()
     }
 
-    /// Session identifier as `&str`. Errors if the 10 bytes aren't valid UTF-8.
+    /// Session identifier decoded as a UTF-8 string.
+    ///
+    /// Returns an error if the 10 session bytes are not valid UTF-8.
+    /// Use [`session_ident_raw`](Self::session_ident_raw) to access the bytes
+    /// unconditionally.
     #[inline]
     pub fn session_ident(&self) -> Result<&str, std::str::Utf8Error> {
         std::str::from_utf8(&self.header.session)
     }
 
-    /// Raw 10 bytes of the session identifier.
-    ///
-    /// See [`Self::session_ident`] for more information.
+    /// Raw 10-byte session identifier, without UTF-8 validation.
     #[inline]
     pub fn session_ident_raw(&self) -> &[u8; 10] {
         &self.header.session
     }
 
-    /// Sequence number of the first message in the packet.
+    /// Sequence number of the *first* message in this packet.
+    ///
+    /// Sequence numbers start at 1 and increase monotonically within a
+    /// session. For heartbeat and end-of-session packets this is the
+    /// sequence number of the *next* expected message.
     #[inline]
     pub fn seq_num(&self) -> u64 {
         self.header.seq_num.get()
     }
 
-    /// Count of messages in the packet.
-    /// - `0xFFFF` indicates end of session.
-    /// - `0x0` indicates heartbeat.
+    /// Number of message blocks carried by this packet.
+    ///
+    /// - `0` ([`HEARTBEAT_IDENT`]) — heartbeat; no messages.
+    /// - `0xFFFF` ([`END_OF_SESSION_IDENT`]) — end-of-session; no messages.
+    /// - Any other value — standard data packet with that many messages.
     #[inline]
     pub fn msg_count(&self) -> u16 {
         self.header.msg_count.get()
     }
 
+    /// Whether the session that produced this packet is still active.
     #[inline]
     pub fn session_status(&self) -> SessionStatus {
         match self.msg_count() {
@@ -105,6 +174,12 @@ impl Packet {
         }
     }
 
+    /// Classify this packet as [`Standard`], [`Heartbeat`], or
+    /// [`EndOfSession`] based on `msg_count`.
+    ///
+    /// [`Standard`]: PacketKind::Standard
+    /// [`Heartbeat`]: PacketKind::Heartbeat
+    /// [`EndOfSession`]: PacketKind::EndOfSession
     #[inline]
     pub fn packet_kind(&self) -> PacketKind {
         match self.msg_count() {
@@ -114,9 +189,11 @@ impl Packet {
         }
     }
 
-    /// Zero-allocation iterator over the message blocks.
+    /// Returns a zero-allocation iterator over the message blocks in this
+    /// packet.
     ///
-    /// Yields nothing for heartbeat or end-of-session packets.
+    /// Yields nothing for heartbeat or end-of-session packets. Also
+    /// implements [`IntoIterator`], so `for msg in &packet { … }` works too.
     #[inline]
     pub fn iter(&self) -> Messages<'_> {
         Messages {
@@ -127,8 +204,6 @@ impl Packet {
             },
         }
     }
-
-    pub(crate) const MIN_PACKET_LEN: usize = 20;
 }
 
 impl<'a> IntoIterator for &'a Packet {
@@ -139,14 +214,13 @@ impl<'a> IntoIterator for &'a Packet {
     }
 }
 
-/// A length-prefixed message block: 2-byte big-endian length + payload.
+/// A single length-prefixed message block inside a downstream packet.
 ///
-/// A message is an atomic piece of information carried by the MoldUDP64 protocol.
-/// MoldUDP64 can theoretically handle individual messages from zero bytes up
-/// to 64KB in length although individual messages should be kept small enough so
-/// that the UDP underlying network protocol can efficiently carry the resulting
-/// MoldUDP64 packets.
-/// The contents of a MoldUDP64 message are defined by the higher level application.
+/// The wire layout is a 2-byte big-endian length field followed by that many
+/// bytes of payload. The contents of the payload are application-defined;
+/// MoldUDP64 treats them as opaque bytes.
+///
+/// Construct via [`Packet::iter`] — never directly.
 #[derive(Debug, FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(C)]
 pub struct Message {
@@ -155,17 +229,25 @@ pub struct Message {
 }
 
 impl Message {
+    /// Number of payload bytes in this message (not including the 2-byte
+    /// length prefix itself).
     #[inline]
     pub fn length(&self) -> u16 {
         self.length.get()
     }
 
+    /// Zero-copy view of the message payload.
     #[inline]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 }
 
+/// Zero-allocation iterator over the [`Message`] blocks in a [`Packet`].
+///
+/// Obtained via [`Packet::iter`] or by iterating `&packet` directly.
+/// Implements [`ExactSizeIterator`], so `.len()` returns the remaining
+/// message count in O(1).
 pub struct Messages<'a> {
     bytes: &'a [u8],
     remaining: u16,
@@ -195,4 +277,5 @@ impl<'a> Iterator for Messages<'a> {
         (n, Some(n))
     }
 }
+
 impl<'a> ExactSizeIterator for Messages<'a> {}
