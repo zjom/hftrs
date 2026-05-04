@@ -7,6 +7,7 @@ version = "0.1.4"
 edition = "2024"
 
 [dependencies]
+chrono = { version = "0.4.44", optional = true }
 zerocopy = { version = "0.8", features = ["derive"] }
 
 
@@ -18,3 +19,7 @@ memmap2 = "0.9.10"
 [[bench]]
 name = "itch_bench"
 harness = false
+
+
+[features]
+chrono = ["dep:chrono"]

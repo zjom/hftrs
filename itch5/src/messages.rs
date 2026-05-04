@@ -60,6 +60,7 @@ impl Price8 {
 #[repr(transparent)]
 pub struct Timestamp([u8; 6]);
 impl Timestamp {
+    /// returns nanoseconds since midnight
     #[inline]
     pub const fn to_u64(&self) -> u64 {
         u64::from_be_bytes([
@@ -77,6 +78,14 @@ impl Timestamp {
     pub const fn to_secs_and_nanos(&self) -> (u64, u32) {
         let nanos = self.to_u64();
         (nanos / 1_000_000_000, (nanos % 1_000_000_000) as u32)
+    }
+
+    #[cfg(feature = "chrono")]
+    #[inline]
+    pub const fn to_naive_time(&self) -> chrono::NaiveTime {
+        let (secs, nanos) = self.to_secs_and_nanos();
+        debug_assert!(secs < 86_400);
+        chrono::NaiveTime::from_num_seconds_from_midnight_opt(secs as u32, nanos).unwrap()
     }
 }
 
