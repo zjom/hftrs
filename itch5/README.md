@@ -181,11 +181,36 @@ The source is in [`examples/parse_file.rs`](examples/parse_file.rs). It memory-m
 
 ## Benchmarks
 
-```
-ITCH5_BENCH_1M_FILE=/path/to/1M-message.itch cargo bench
+```sh
+# Default: uses the 1M-message sample at ../data/itch_1000_000
+taskset -c 3 cargo bench -p itch5
+
+# Or override the sample location:
+ITCH5_BENCH_FILE=/path/to/feed.itch cargo bench -p itch5
 ```
 
-The benchmark (in [`benches/itch_bench.rs`](benches/itch_bench.rs)) reports throughput in messages/second and bytes/second using [Criterion](https://github.com/bheisler/criterion.rs).
+The suite ([`benches/itch_bench.rs`](benches/itch_bench.rs)) is structured around the questions an HFT consumer would actually ask:
+
+- **`itch5/framing/parse_one_only_100k`** — pure wire-format framing
+  cost. Walks a synthetic stream with [`parse_one`] and only inspects
+  the tag byte. This is the floor: length-prefix decode and slice
+  splits, no dispatch, no `cast`.
+- **`itch5/per_msg_type/{add_no_mpid,add_with_mpid,order_executed,
+  order_cancel,order_delete,order_replace,trade}`** — full
+  `parse_stream` over a homogeneous synthetic stream of each hot
+  message type, dispatched into a no-op handler. Surfaces dispatch +
+  cast cost per type so a regression in one is isolatable.
+- **`itch5/full_file/{noop_handler,counting_handler}`** — the
+  recorded sample replayed end-to-end. `noop` reports the parser's
+  intrinsic ceiling; `counting` reports what an order-book consumer
+  pays after touching every accessor on the hot message types.
+  Reported in messages/sec *and* bytes/sec.
+- **`itch5/field_accessors/{price4_into_i64,timestamp_to_u64,
+  symbol_to_u64}`** — confirms each zero-copy big-endian accessor
+  folds to a single load (or load + bswap) at release optimization.
+
+If the sample file is unavailable, the data-driven group prints a
+notice and skips; the synthetic and accessor groups still run.
 
 ## License
 
