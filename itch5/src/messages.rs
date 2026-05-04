@@ -60,7 +60,7 @@ impl Price8 {
 /// Event Code 11 1 Alpha See System Event Codes below
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct SystemEventMessage {
+pub struct SystemEvent {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -68,7 +68,7 @@ pub struct SystemEventMessage {
     event_code: u8,
 }
 
-impl SystemEventMessage {
+impl SystemEvent {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'S';
 
@@ -730,7 +730,7 @@ impl From<u8> for MarketParticipantState {
 /// Market wide circuit breaker Decline Level Message
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct MWCBDeclineLevelMessage {
+pub struct MWCBDeclineLevel {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -740,7 +740,7 @@ pub struct MWCBDeclineLevelMessage {
     level_3: Price8,
 }
 
-impl MWCBDeclineLevelMessage {
+impl MWCBDeclineLevel {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'V';
 
@@ -773,7 +773,7 @@ impl MWCBDeclineLevelMessage {
 /// Market-Wide Circuit Breaker Status message
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct MWCBStatusMessage {
+pub struct MWCBStatus {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -781,7 +781,7 @@ pub struct MWCBStatusMessage {
     breached_level: u8,
 }
 
-impl MWCBStatusMessage {
+impl MWCBStatus {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'W';
 
@@ -1184,7 +1184,7 @@ impl AddOrderWithMPIDAttribution {
 /// build a complete view of all non-•-cross executions that happen on Nasdaq. Cross execution information is available in one bulk print per symbol via the Cross Trade Message.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct OrderExecutedMessage {
+pub struct OrderExecuted {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1194,7 +1194,7 @@ pub struct OrderExecutedMessage {
     match_number: U64,
 }
 
-impl OrderExecutedMessage {
+impl OrderExecuted {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'E';
 
@@ -1236,7 +1236,7 @@ impl OrderExecutedMessage {
 /// -- printable to prevent double counting.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct OrderExecutedWithPriceMessage {
+pub struct OrderExecutedWithPrice {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1248,7 +1248,7 @@ pub struct OrderExecutedWithPriceMessage {
     execution_price: Price4,
 }
 
-impl OrderExecutedWithPriceMessage {
+impl OrderExecutedWithPrice {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'C';
 
@@ -1310,7 +1310,7 @@ impl From<u8> for Printable {
 /// This message is sent whenever an order on the book is modified as a result of a partial cancellation.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct OrderCancelMessage {
+pub struct OrderCancel {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1319,7 +1319,7 @@ pub struct OrderCancelMessage {
     cancelled_shares: U32,
 }
 
-impl OrderCancelMessage {
+impl OrderCancel {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'X';
 
@@ -1349,7 +1349,7 @@ impl OrderCancelMessage {
 /// This message is sent whenever an order on the book is being cancelled. All remaining shares are no longer accessible so the order must be removed from the book.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct OrderDeleteMessage {
+pub struct OrderDelete {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1357,7 +1357,7 @@ pub struct OrderDeleteMessage {
     order_reference_number: U64,
 }
 
-impl OrderDeleteMessage {
+impl OrderDelete {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'D';
 
@@ -1383,7 +1383,7 @@ impl OrderDeleteMessage {
 /// This message is sent whenever an order on the book has been cancel-replaced. All remaining shares from the original order are no longer accessible, and must be removed. The new order details are provided for the replacement, along with a new order reference number which will be used henceforth. Since the side, stock symbol and attribution (if any) cannot be changed by an Order Replace event, these fields are not included in the message. Firms should retain the side, stock symbol and MPID from the original Add Order message.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct OrderReplaceMessage {
+pub struct OrderReplace {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1394,7 +1394,7 @@ pub struct OrderReplaceMessage {
     price: Price4,
 }
 
-impl OrderReplaceMessage {
+impl OrderReplace {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'U';
 
@@ -1434,7 +1434,7 @@ impl OrderReplaceMessage {
 /// Trade Messages should be included in Nasdaq time-and-sales displays as well as volume and other market statistics. Since Trade Messages do not affect the book, however, they may be ignored by firms just looking to build and track the Nasdaq execution system display.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct TradeMessage {
+pub struct Trade {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1447,7 +1447,7 @@ pub struct TradeMessage {
     match_number: U64,
 }
 
-impl TradeMessage {
+impl Trade {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'P';
 
@@ -1499,7 +1499,7 @@ impl TradeMessage {
 /// shares as zero.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct CrossTradeMessage {
+pub struct CrossTrade {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1511,7 +1511,7 @@ pub struct CrossTradeMessage {
     cross_type: u8,
 }
 
-impl CrossTradeMessage {
+impl CrossTrade {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'Q';
 
@@ -1558,7 +1558,7 @@ impl CrossTradeMessage {
 /// these messages as they have no impact on the current book.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct BrokenTradeMessage {
+pub struct BrokenTrade {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1566,7 +1566,7 @@ pub struct BrokenTradeMessage {
     match_number: U64,
 }
 
-impl BrokenTradeMessage {
+impl BrokenTrade {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'B';
 
@@ -1596,7 +1596,7 @@ impl BrokenTradeMessage {
 /// Nasdaq will also disseminate an Extended Trading Close (ETC) message from 4:00 p.m. to 4:05 p.m. at five second intervals.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct NetOrderImbalanceIndicatorMessage {
+pub struct NetOrderImbalanceIndicator {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1612,7 +1612,7 @@ pub struct NetOrderImbalanceIndicatorMessage {
     price_variation_indicator: u8,
 }
 
-impl NetOrderImbalanceIndicatorMessage {
+impl NetOrderImbalanceIndicator {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'I';
 
@@ -1847,7 +1847,7 @@ impl From<u8> for InterestFlag {
 /// disseminating messages once per second as soon as the DLCR volatility test has successfully passed.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
-pub struct DirectListingwithCapitalRaisePriceDiscoveryMessage {
+pub struct DirectListingwithCapitalRaisePriceDiscovery {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
@@ -1862,7 +1862,7 @@ pub struct DirectListingwithCapitalRaisePriceDiscoveryMessage {
     upper_price_range_collar: Price4,
 }
 
-impl DirectListingwithCapitalRaisePriceDiscoveryMessage {
+impl DirectListingwithCapitalRaisePriceDiscovery {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'O';
 

@@ -30,10 +30,7 @@ struct Handler {
 }
 
 impl itch5::MessageHandler for Handler {
-    fn on_trade_message(
-        &mut self,
-        _msg: &itch5::messages::TradeMessage,
-    ) -> std::ops::ControlFlow<()> {
+    fn on_trade(&mut self, _msg: &itch5::messages::Trade) -> std::ops::ControlFlow<()> {
         self.trades += 1;
         std::ops::ControlFlow::Continue(())
     }

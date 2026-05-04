@@ -10,7 +10,7 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 /// types you care about.  Return `ControlFlow::Break(())` from any method
 /// to stop parsing immediately.
 pub trait MessageHandler {
-    fn on_system_event_message(&mut self, _msg: &SystemEventMessage) -> ControlFlow<()> {
+    fn on_system_event(&mut self, _msg: &SystemEvent) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
     fn on_stock_directory(&mut self, _msg: &StockDirectory) -> ControlFlow<()> {
@@ -28,10 +28,10 @@ pub trait MessageHandler {
     ) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
-    fn on_mwcb_decline_level_message(&mut self, _msg: &MWCBDeclineLevelMessage) -> ControlFlow<()> {
+    fn on_mwcb_decline_level(&mut self, _msg: &MWCBDeclineLevel) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
-    fn on_mwcb_status_message(&mut self, _msg: &MWCBStatusMessage) -> ControlFlow<()> {
+    fn on_mwcb_status(&mut self, _msg: &MWCBStatus) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
     fn on_quoting_period_update(&mut self, _msg: &QuotingPeriodUpdate) -> ControlFlow<()> {
@@ -55,36 +55,33 @@ pub trait MessageHandler {
     ) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
-    fn on_order_executed_message(&mut self, _msg: &OrderExecutedMessage) -> ControlFlow<()> {
+    fn on_order_executed(&mut self, _msg: &OrderExecuted) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
-    fn on_order_executed_with_price_message(
+    fn on_order_executed_with_price(&mut self, _msg: &OrderExecutedWithPrice) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_order_cancel(&mut self, _msg: &OrderCancel) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_order_delete(&mut self, _msg: &OrderDelete) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_order_replace(&mut self, _msg: &OrderReplace) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_trade(&mut self, _msg: &Trade) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_cross_trade(&mut self, _msg: &CrossTrade) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_broken_trade(&mut self, _msg: &BrokenTrade) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+    fn on_net_order_imbalance_indicator(
         &mut self,
-        _msg: &OrderExecutedWithPriceMessage,
-    ) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_order_cancel_message(&mut self, _msg: &OrderCancelMessage) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_order_delete_message(&mut self, _msg: &OrderDeleteMessage) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_order_replace_message(&mut self, _msg: &OrderReplaceMessage) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_trade_message(&mut self, _msg: &TradeMessage) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_cross_trade_message(&mut self, _msg: &CrossTradeMessage) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_broken_trade_message(&mut self, _msg: &BrokenTradeMessage) -> ControlFlow<()> {
-        ControlFlow::Continue(())
-    }
-    fn on_net_order_imbalance_indicator_message(
-        &mut self,
-        _msg: &NetOrderImbalanceIndicatorMessage,
+        _msg: &NetOrderImbalanceIndicator,
     ) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
@@ -94,9 +91,9 @@ pub trait MessageHandler {
     ) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
-    fn on_direct_listing_with_capital_raise_price_discovery_message(
+    fn on_direct_listing_with_capital_raise_price_discovery(
         &mut self,
-        _msg: &DirectListingwithCapitalRaisePriceDiscoveryMessage,
+        _msg: &DirectListingwithCapitalRaisePriceDiscovery,
     ) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
@@ -126,30 +123,29 @@ impl<'a> Parser<'a> {
             self.buf = rest;
             // body[0] is guaranteed to be a known tag by parse().
             let cf = match body[0] {
-                b'S' => handler.on_system_event_message(cast(body)?),
+                b'S' => handler.on_system_event(cast(body)?),
                 b'R' => handler.on_stock_directory(cast(body)?),
                 b'H' => handler.on_stock_trading_action(cast(body)?),
                 b'Y' => handler.on_reg_sho_restriction(cast(body)?),
                 b'L' => handler.on_market_participant_position(cast(body)?),
-                b'V' => handler.on_mwcb_decline_level_message(cast(body)?),
-                b'W' => handler.on_mwcb_status_message(cast(body)?),
+                b'V' => handler.on_mwcb_decline_level(cast(body)?),
+                b'W' => handler.on_mwcb_status(cast(body)?),
                 b'K' => handler.on_quoting_period_update(cast(body)?),
                 b'J' => handler.on_luld_auction_collar(cast(body)?),
                 b'h' => handler.on_operational_halt(cast(body)?),
                 b'A' => handler.on_add_order_no_mpid_attribution(cast(body)?),
                 b'F' => handler.on_add_order_with_mpid_attribution(cast(body)?),
-                b'E' => handler.on_order_executed_message(cast(body)?),
-                b'C' => handler.on_order_executed_with_price_message(cast(body)?),
-                b'X' => handler.on_order_cancel_message(cast(body)?),
-                b'D' => handler.on_order_delete_message(cast(body)?),
-                b'U' => handler.on_order_replace_message(cast(body)?),
-                b'P' => handler.on_trade_message(cast(body)?),
-                b'Q' => handler.on_cross_trade_message(cast(body)?),
-                b'B' => handler.on_broken_trade_message(cast(body)?),
-                b'I' => handler.on_net_order_imbalance_indicator_message(cast(body)?),
+                b'E' => handler.on_order_executed(cast(body)?),
+                b'C' => handler.on_order_executed_with_price(cast(body)?),
+                b'X' => handler.on_order_cancel(cast(body)?),
+                b'D' => handler.on_order_delete(cast(body)?),
+                b'U' => handler.on_order_replace(cast(body)?),
+                b'P' => handler.on_trade(cast(body)?),
+                b'Q' => handler.on_cross_trade(cast(body)?),
+                b'B' => handler.on_broken_trade(cast(body)?),
+                b'I' => handler.on_net_order_imbalance_indicator(cast(body)?),
                 b'N' => handler.on_retail_price_improvement_indicator(cast(body)?),
-                b'O' => handler
-                    .on_direct_listing_with_capital_raise_price_discovery_message(cast(body)?),
+                b'O' => handler.on_direct_listing_with_capital_raise_price_discovery(cast(body)?),
                 unknown => return Err(ParseError::UnknownMessageType(unknown)),
             };
             if cf.is_break() {
