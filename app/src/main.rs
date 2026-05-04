@@ -617,7 +617,7 @@ impl itch5::MessageHandler for MessageHandler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_executed_message(&mut self, msg: &OrderExecutedMessage) -> ControlFlow<()> {
+    fn on_order_executed(&mut self, msg: &OrderExecuted) -> ControlFlow<()> {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -644,10 +644,7 @@ impl itch5::MessageHandler for MessageHandler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_executed_with_price_message(
-        &mut self,
-        msg: &OrderExecutedWithPriceMessage,
-    ) -> ControlFlow<()> {
+    fn on_order_executed_with_price(&mut self, msg: &OrderExecutedWithPrice) -> ControlFlow<()> {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -681,7 +678,7 @@ impl itch5::MessageHandler for MessageHandler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_cancel_message(&mut self, msg: &OrderCancelMessage) -> ControlFlow<()> {
+    fn on_order_cancel(&mut self, msg: &OrderCancel) -> ControlFlow<()> {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -705,7 +702,7 @@ impl itch5::MessageHandler for MessageHandler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_delete_message(&mut self, msg: &OrderDeleteMessage) -> ControlFlow<()> {
+    fn on_order_delete(&mut self, msg: &OrderDelete) -> ControlFlow<()> {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -726,7 +723,7 @@ impl itch5::MessageHandler for MessageHandler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_replace_message(&mut self, msg: &OrderReplaceMessage) -> ControlFlow<()> {
+    fn on_order_replace(&mut self, msg: &OrderReplace) -> ControlFlow<()> {
         let og_order_ref = msg.original_order_reference_number();
         let locate = msg.stock_locate();
         let new_order_ref = msg.new_order_reference_number();
