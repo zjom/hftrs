@@ -120,8 +120,7 @@ fn extract_messages(mmap: &[u8], limit: Option<usize>) -> Vec<Vec<u8>> {
 }
 
 fn batch_messages(msgs: Vec<Vec<u8>>, msgs_per_packet: usize) -> Vec<Vec<Vec<u8>>> {
-    let mut batches: Vec<Vec<Vec<u8>>> =
-        Vec::with_capacity(msgs.len().div_ceil(msgs_per_packet));
+    let mut batches: Vec<Vec<Vec<u8>>> = Vec::with_capacity(msgs.len().div_ceil(msgs_per_packet));
     let mut chunk = Vec::with_capacity(msgs_per_packet);
     for m in msgs {
         chunk.push(m);
@@ -360,7 +359,9 @@ impl itch5::MessageHandler for ReplayHandler {
 // ─── Bench ─────────────────────────────────────────────────────────────────
 
 fn bench_end_to_end(c: &mut Criterion) {
-    let Some(mmap) = try_load_sample() else { return };
+    let Some(mmap) = try_load_sample() else {
+        return;
+    };
 
     let limit: Option<usize> = std::env::var("END_TO_END_MSGS")
         .ok()
@@ -413,9 +414,7 @@ fn bench_end_to_end(c: &mut Criterion) {
                 while delivered < target {
                     let dgram = match rx.recv_timeout(Duration::from_secs(10)) {
                         Ok(d) => d,
-                        Err(_) => panic!(
-                            "end_to_end stalled at {delivered}/{total_msgs} messages"
-                        ),
+                        Err(_) => panic!("end_to_end stalled at {delivered}/{total_msgs} messages"),
                     };
                     let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
                     match pkt.packet_kind() {
