@@ -5,7 +5,6 @@ use memmap2::Mmap;
 use orderbook::{Order, OrderBook, Side};
 use std::env;
 use std::fs::File;
-
 use std::ops::ControlFlow;
 fn main() {
     let args: Vec<String> = env::args().collect();
