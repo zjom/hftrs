@@ -116,13 +116,7 @@ impl std::str::FromStr for Symbol {
 }
 
 /// System Event Message
-/// The system event message type is used to signal a market or data feed handler event. The format is as follows:
-/// Name Offset Length Value Notes
-/// Message Type 0 1 "S" System Event Message
-/// Stock Locate 1 2 Integer Always 0
-/// Tracking Number 3 2 Integer Nasdaq internal tracking number
-/// Timestamp 5 6 Integer Nanoseconds since midnight
-/// Event Code 11 1 Alpha See System Event Codes below
+/// The system event message type is used to signal a market or data feed handler event.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct SystemEvent {
