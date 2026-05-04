@@ -261,7 +261,7 @@ struct MessageHandler {
 impl MessageHandler {
     fn new(symbols: Vec<Symbol>) -> MessageHandler {
         MessageHandler {
-            registry: Registry::with_capacity(1 << 16 + 1),
+            registry: Registry::with_capacity(symbols.len()),
             symbols_to_watch: symbols.iter().map(|s| s.hash()).collect(),
         }
     }
