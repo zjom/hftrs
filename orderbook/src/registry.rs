@@ -18,6 +18,7 @@ impl Registry {
             symbols: HashMap::with_capacity(DEFAULT_CAPACITY),
         }
     }
+    #[inline]
     pub fn with_capacity(cap: usize) -> Registry {
         Self {
             books: HashMap::with_capacity(cap),
@@ -35,19 +36,22 @@ impl Registry {
     }
 
     /// Create an entry for a stock locate.
-    /// Allocates if needed.
+    #[inline]
     pub fn register(&mut self, symbol: &[u8; 8], locate: u16) {
         self.symbols.insert(locate, *symbol);
         self.books.insert(locate, OrderBook::new());
     }
 
+    #[inline]
     pub fn get(&self, locate: u16) -> Option<&OrderBook> {
         self.books.get(&locate)
     }
 
+    #[inline]
     pub fn get_mut(&mut self, locate: u16) -> Option<&mut OrderBook> {
         self.books.get_mut(&locate)
     }
+    #[inline]
     pub fn iter(&self) -> Iter<'_> {
         Iter::new(self)
     }
@@ -89,6 +93,7 @@ impl<'a> IntoIterator for &'a Registry {
     type Item = (u16, [u8; 8], &'a OrderBook);
     type IntoIter = Iter<'a>;
 
+    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
