@@ -26,7 +26,7 @@ fn bench_parse_one_million_msgs(c: &mut Criterion) {
         elements: 1_000_000,
     });
 
-    group.bench_function("parse_feed", |b| {
+    group.bench_function("parse_1M_msgs", |b| {
         b.iter(|| {
             let mut visitor = Handler::default();
             itch5::Parser::new(&mmap)
