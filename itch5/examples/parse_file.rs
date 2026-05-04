@@ -1,25 +1,27 @@
 extern crate itch5;
-use memmap2::Mmap;
 use std::env;
+use std::error::Error;
 use std::fs::File;
+use std::io::{BufReader, Read};
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("usage: cargo run --example parse_file </PATH/TO/ITCH5/FILE>");
-        return;
+        return Err("usage: cargo run --example parse_file </PATH/TO/ITCH5/FILE>".into());
     }
 
     let input_file_path = args.get(1).unwrap();
-    let file = File::open(input_file_path).unwrap();
-    let mmap = unsafe { Mmap::map(&file).unwrap() };
+    let file = File::open(input_file_path)?;
+    let file_size = file.metadata()?.len() as usize;
+    let mut reader = BufReader::new(file);
+    let mut buf = Vec::with_capacity(file_size);
+    reader.read_to_end(&mut buf)?;
 
     let mut visitor = Handler::default();
-    itch5::Parser::new(&mmap)
-        .parse_stream(&mut visitor)
-        .unwrap();
+    itch5::Parser::new(&buf).parse_stream(&mut visitor)?;
 
-    eprintln!("trades: {}", visitor.trades);
+    println!("trades: {}", visitor.trades);
+    Ok(())
 }
 
 #[derive(Default)]
