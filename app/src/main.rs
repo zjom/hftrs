@@ -7,11 +7,14 @@ use moldudp::{
     FromBytes, MoldUDP64, MoldUDP64Server, Packet, PacketKind, RetransmissionPacket,
     RetransmissionRequest, ServerHandle,
 };
-use orderbook::{Order, OrderBook, Side};
+use orderbook::registry::Registry;
+use orderbook::{Order, Side};
+use std::collections::HashSet;
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -34,6 +37,10 @@ struct Config {
     /// Path to file to write output.
     #[arg(short = 'o', long = "out")]
     output_file_path: Option<PathBuf>,
+
+    /// Symbols to watch
+    #[arg(short = 'w', long = "watch")]
+    symbol_strs: Vec<String>,
 
     /// Session identifier. Strings shorter than 10 bytes are right-padded with
     /// spaces; longer strings are truncated.
@@ -116,42 +123,54 @@ fn main() -> Result<()> {
         })
     };
 
-    let client_thread = thread::spawn(move || -> MessageHandler {
-        let mut handler = MessageHandler::new();
-        while let Ok(datagram) = rx.recv() {
-            if shutdown.load(Ordering::Relaxed) {
-                log::info!("shutdown requested");
-                break;
-            }
+    let client_thread = {
+        let symbols_to_watch: Vec<Symbol> = config
+            .symbol_strs
+            .iter()
+            .filter(|s| s.len() > 0)
+            .map(|s| {
+                itch5::messages::Symbol::from_str(s)
+                    .expect("Symbol::from_str only returns err if len == 0")
+            })
+            .collect();
 
-            let packet = Packet::ref_from_bytes(datagram.bytes()).unwrap();
-            let msg_count = packet.msg_count();
-            match packet.packet_kind() {
-                PacketKind::Heartbeat => continue,
-                PacketKind::EndOfSession => break,
-                _ => {}
-            }
-            info!("received packet with {} messages", msg_count);
+        thread::spawn(move || -> MessageHandler {
+            let mut handler = MessageHandler::new(symbols_to_watch);
+            while let Ok(datagram) = rx.recv() {
+                if shutdown.load(Ordering::Relaxed) {
+                    log::info!("shutdown requested");
+                    break;
+                }
 
-            let actual_msg_count = packet.iter().len();
-            if actual_msg_count != msg_count.into() {
-                let rereq = RetransmissionPacket {
-                    msg_count: msg_count.into(),
-                    seq_num: packet.seq_num().into(),
-                    session: *packet.session_ident_raw(),
-                };
-                info!("received: {actual_msg_count}, expected: {msg_count}. rerequesting..");
+                let packet = Packet::ref_from_bytes(datagram.bytes()).unwrap();
+                let msg_count = packet.msg_count();
+                match packet.packet_kind() {
+                    PacketKind::Heartbeat => continue,
+                    PacketKind::EndOfSession => break,
+                    _ => {}
+                }
+                info!("received packet with {} messages", msg_count);
 
-                req_tx.try_send(RetransmissionRequest::new(rereq)).unwrap();
-            }
+                let actual_msg_count = packet.iter().len();
+                if actual_msg_count != msg_count.into() {
+                    let rereq = RetransmissionPacket {
+                        msg_count: msg_count.into(),
+                        seq_num: packet.seq_num().into(),
+                        session: *packet.session_ident_raw(),
+                    };
+                    info!("received: {actual_msg_count}, expected: {msg_count}. rerequesting..");
 
-            if let Err(e) = itch5::Parser::new(&packet.messages).parse_stream(&mut handler) {
-                error!("failed to parse msg in stream: {e}");
-                continue;
+                    req_tx.try_send(RetransmissionRequest::new(rereq)).unwrap();
+                }
+
+                if let Err(e) = itch5::Parser::new(&packet.messages).parse_stream(&mut handler) {
+                    error!("failed to parse msg in stream: {e}");
+                    continue;
+                }
             }
-        }
-        handler
-    });
+            handler
+        })
+    };
 
     let server_res = server_thread.join().expect("server thread panicked");
     let handler = client_thread.join().expect("client thread panicked");
@@ -234,49 +253,26 @@ fn flush(handle: &ServerHandle, batch: &mut Vec<Vec<u8>>) -> Result<u64> {
     Ok(n)
 }
 
-const NO_SYMBOL: [u8; 8] = [0; 8];
-
 struct MessageHandler {
-    books: Vec<OrderBook>,
-    symbols: Vec<[u8; 8]>,
+    registry: Registry,
+    symbols_to_watch: HashSet<u64>,
 }
 
 impl MessageHandler {
-    fn new() -> MessageHandler {
-        // Stock directory messages will grow these to the locate range
-        // actually used in the session (typically ~10k entries).
+    fn new(symbols: Vec<Symbol>) -> MessageHandler {
         MessageHandler {
-            books: Vec::with_capacity(u16::MAX as usize + 1),
-            symbols: Vec::with_capacity(u16::MAX as usize + 1),
+            registry: Registry::with_capacity(1 << 16 + 1),
+            symbols_to_watch: symbols.iter().map(|s| s.hash()).collect(),
         }
-    }
-
-    /// Grow `books` and `symbols` so `locate` is a valid index. Idempotent.
-    /// In a well-formed ITCH session, stock directory messages arrive before
-    /// any order activity, so this only actually grows on those messages —
-    /// but keeping it on the add path too is cheap defensive insurance.
-    #[inline]
-    fn ensure_locate(&mut self, locate: u16) {
-        let needed = locate as usize + 1;
-        if self.books.len() < needed {
-            self.books
-                .resize_with(needed, || OrderBook::with_capacity(1024));
-            self.symbols.resize(needed, NO_SYMBOL);
-        }
-    }
-
-    /// Resolve a locate back to its ASCII symbol for logging.
-    fn symbol_str(&self, locate: u16) -> &str {
-        let bytes = &self.symbols[locate as usize];
-        std::str::from_utf8(bytes).unwrap_or("?").trim_end()
     }
 }
 
 impl itch5::MessageHandler for MessageHandler {
     fn on_stock_directory(&mut self, msg: &StockDirectory) -> ControlFlow<()> {
-        let locate = msg.stock_locate();
-        self.ensure_locate(locate);
-        self.symbols[locate as usize] = *msg.stock();
+        let stock = msg.stock();
+        if self.symbols_to_watch.contains(&stock.hash()) {
+            self.registry.register(msg.stock_locate(), stock);
+        }
         ControlFlow::Continue(())
     }
 
@@ -285,7 +281,10 @@ impl itch5::MessageHandler for MessageHandler {
         msg: &AddOrderNoMPIDAttribution,
     ) -> ControlFlow<()> {
         let locate = msg.stock_locate();
-        self.ensure_locate(locate);
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
         let order_ref = msg.order_reference_number();
 
         let side = match msg.buy_sell_indicator() {
@@ -297,7 +296,7 @@ impl itch5::MessageHandler for MessageHandler {
             }
         };
 
-        if let Err(e) = self.books[locate as usize].add(Order {
+        if let Err(e) = book.add(Order {
             id: order_ref,
             side,
             price: msg.price().into_i64(),
@@ -314,7 +313,10 @@ impl itch5::MessageHandler for MessageHandler {
         msg: &AddOrderWithMPIDAttribution,
     ) -> ControlFlow<()> {
         let locate = msg.stock_locate();
-        self.ensure_locate(locate);
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
         let order_ref = msg.order_reference_number();
 
         let side = match msg.buy_sell_indicator() {
@@ -326,7 +328,7 @@ impl itch5::MessageHandler for MessageHandler {
             }
         };
 
-        if let Err(e) = self.books[locate as usize].add(Order {
+        if let Err(e) = book.add(Order {
             id: order_ref,
             side,
             price: msg.price().into_i64(),
@@ -340,14 +342,13 @@ impl itch5::MessageHandler for MessageHandler {
 
     fn on_order_executed_message(&mut self, msg: &OrderExecutedMessage) -> ControlFlow<()> {
         let order_ref = msg.order_reference_number();
-
         let locate = msg.stock_locate();
 
-        if let Err(e) = self.books[locate as usize].execute(
-            order_ref,
-            msg.executed_shares() as u64,
-            msg.timestamp(),
-        ) {
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
+        if let Err(e) = book.execute(order_ref, msg.executed_shares() as u64, msg.timestamp()) {
             error!("failed to execute order {order_ref}: {e}");
         }
         ControlFlow::Continue(())
@@ -360,7 +361,11 @@ impl itch5::MessageHandler for MessageHandler {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
-        if let Err(e) = self.books[locate as usize].execute_at(
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
+        if let Err(e) = book.execute_at(
             order_ref,
             msg.executed_shares() as u64,
             msg.execution_price().into_i64(),
@@ -375,8 +380,11 @@ impl itch5::MessageHandler for MessageHandler {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
-        if let Err(e) = self.books[locate as usize].cancel(order_ref, msg.cancelled_shares() as u64)
-        {
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
+        if let Err(e) = book.cancel(order_ref, msg.cancelled_shares() as u64) {
             error!("failed to cancel order {order_ref}: {e}");
         }
         ControlFlow::Continue(())
@@ -385,7 +393,12 @@ impl itch5::MessageHandler for MessageHandler {
     fn on_order_delete_message(&mut self, msg: &OrderDeleteMessage) -> ControlFlow<()> {
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
-        if let Err(e) = self.books[locate as usize].delete(order_ref) {
+
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
+        if let Err(e) = book.delete(order_ref) {
             error!("failed to delete order {order_ref}: {e}");
         }
         ControlFlow::Continue(())
@@ -396,7 +409,11 @@ impl itch5::MessageHandler for MessageHandler {
         let locate = msg.stock_locate();
         let new_order_ref = msg.new_order_reference_number();
 
-        if let Err(e) = self.books[locate as usize].replace(
+        let Some(book) = self.registry.get_mut(locate) else {
+            return ControlFlow::Continue(());
+        };
+
+        if let Err(e) = book.replace(
             og_order_ref,
             new_order_ref,
             msg.price().into_i64(),
@@ -405,6 +422,7 @@ impl itch5::MessageHandler for MessageHandler {
         ) {
             error!("failed to replace order {og_order_ref} with {new_order_ref}: {e}");
         }
+
         ControlFlow::Continue(())
     }
 }
@@ -412,15 +430,13 @@ impl itch5::MessageHandler for MessageHandler {
 fn write_report(handler: &MessageHandler, mut writer: impl io::Write) -> io::Result<()> {
     writeln!(writer, "symb\tbest_ask\tbest_bid\tspread\tmid\tdepth(10)")?;
     handler
-        .books
+        .registry
         .iter()
-        .zip(0..)
-        .map(|(book, i)| {
-            let symb = handler.symbols[i];
+        .map(|(_locate, symb, book)| {
             writeln!(
                 writer,
                 "{}\t{:?}\t{:?}\t{:?}\t{:?}\t{:?}",
-                String::from_utf8(symb.to_vec()).unwrap_or("unknown".to_string()),
+                symb.as_str(),
                 book.best_ask().unwrap_or((0, 0)),
                 book.best_bid().unwrap_or((0, 0)),
                 book.spread().unwrap_or(0),
@@ -428,6 +444,6 @@ fn write_report(handler: &MessageHandler, mut writer: impl io::Write) -> io::Res
                 book.depth(10)
             )
         })
-        .collect::<io::Result<Vec<_>>>()?; // collects Ok(())s, short-circuits on first Err
+        .collect::<io::Result<Vec<_>>>()?;
     Ok(())
 }
