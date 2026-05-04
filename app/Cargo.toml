@@ -17,3 +17,11 @@ env_logger = "0.11.10"
 log = "0.4.29"
 ctrlc = "3.5.2"
 clap = {version="4.6.1", features=["derive"]}
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["html_reports", "cargo_bench_support"] }
+crossbeam = "0.8.4"
+
+[[bench]]
+name = "end_to_end"
+harness = false
