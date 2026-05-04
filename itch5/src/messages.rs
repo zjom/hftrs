@@ -129,7 +129,7 @@ pub struct SystemEvent {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     event_code: u8,
 }
 
@@ -141,14 +141,17 @@ impl SystemEvent {
     pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     #[inline]
     pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
+
     #[inline]
     pub const fn event_code(&self) -> SystemEventCode {
         SystemEventCode::from_byte(self.event_code)
@@ -194,6 +197,7 @@ impl SystemEventCode {
         }
     }
 }
+
 impl From<u8> for SystemEventCode {
     #[inline]
     fn from(value: u8) -> Self {
@@ -211,7 +215,7 @@ pub struct StockDirectory {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     market_category: u8,
     financial_status_indicator: u8,
@@ -246,8 +250,8 @@ impl StockDirectory {
 
     /// Time at which the directory message was generated. Refer to Data Types for field processing notes.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Denotes the security symbol for the issue in the Nasdaq execution system.
@@ -627,7 +631,7 @@ pub struct StockTradingAction {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     trading_state: u8,
     reserved: u8,
@@ -652,8 +656,8 @@ impl StockTradingAction {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Stock symbol, right padded with spaces
@@ -732,7 +736,7 @@ pub struct RegSHORestriction {
     tag: u8,
     locate_code: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     reg_sho_action: u8,
 }
@@ -755,8 +759,8 @@ impl RegSHORestriction {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Stock symbol, right padded with spaces
@@ -816,7 +820,7 @@ pub struct MarketParticipantPosition {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     mpid: [u8; 4],
     stock: Symbol,
     primary_market_maker: u8,
@@ -842,8 +846,8 @@ impl MarketParticipantPosition {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Denotes the market participant identifier for which the position message is being generated
@@ -984,7 +988,7 @@ pub struct MWCBDeclineLevel {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     level_1: Price8,
     level_2: Price8,
     level_3: Price8,
@@ -1008,8 +1012,8 @@ impl MWCBDeclineLevel {
 
     /// Time at which the MWCB Decline Level message was generated
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Denotes the MWCB Level 1 Value.
@@ -1038,7 +1042,7 @@ pub struct MWCBStatus {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     breached_level: u8,
 }
 
@@ -1060,8 +1064,8 @@ impl MWCBStatus {
 
     /// Time at which the MWCB Breaker Status message was generated
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Denotes the MWCB Level that was breached.
@@ -1110,7 +1114,7 @@ pub struct QuotingPeriodUpdate {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     ipo_quotation_release_time: U32,
     ipo_quotation_release_qualifier: u8,
@@ -1135,8 +1139,8 @@ impl QuotingPeriodUpdate {
 
     /// Time at which the IPO Quoting Period Update message was generated
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Stock symbol, right padded with spaces
@@ -1200,7 +1204,7 @@ pub struct LULDAuctionCollar {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     auction_collar_reference_price: Price4,
     upper_auction_collar_price: Price4,
@@ -1226,8 +1230,8 @@ impl LULDAuctionCollar {
 
     /// Nanoseconds past midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Stock symbol, right padded with spaces
@@ -1276,7 +1280,7 @@ pub struct OperationalHalt {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     market_code: u8,
     operational_halt_action: u8,
@@ -1300,8 +1304,8 @@ impl OperationalHalt {
 
     /// Time at which the Operational Halt message was generated.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Denotes the security symbol for the issue in Nasdaq execution system
@@ -1390,7 +1394,7 @@ pub struct AddOrderNoMPIDAttribution {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
     buy_sell_indicator: u8,
     shares: U32,
@@ -1416,8 +1420,8 @@ impl AddOrderNoMPIDAttribution {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The unique reference number assigned to the new order at the time of receipt.
@@ -1487,7 +1491,7 @@ pub struct AddOrderWithMPIDAttribution {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
     buy_sell_indicator: u8,
     shares: U32,
@@ -1514,8 +1518,8 @@ impl AddOrderWithMPIDAttribution {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The unique reference number assigned to the new order at the time of receipt.
@@ -1567,7 +1571,7 @@ pub struct OrderExecuted {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
     executed_shares: U32,
     match_number: U64,
@@ -1591,8 +1595,8 @@ impl OrderExecuted {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The unique reference number assigned to the new order at the time of receipt
@@ -1630,7 +1634,7 @@ pub struct OrderExecutedWithPrice {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
     executed_shares: U32,
     match_number: U64,
@@ -1656,8 +1660,8 @@ impl OrderExecutedWithPrice {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The unique reference number assigned to the new order at the time of receipt
@@ -1726,7 +1730,7 @@ pub struct OrderCancel {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
     cancelled_shares: U32,
 }
@@ -1749,8 +1753,8 @@ impl OrderCancel {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The reference number of the order being canceled
@@ -1774,7 +1778,7 @@ pub struct OrderDelete {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
 }
 
@@ -1796,8 +1800,8 @@ impl OrderDelete {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The reference number of the order being canceled
@@ -1815,7 +1819,7 @@ pub struct OrderReplace {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     original_order_reference_number: U64,
     new_order_reference_number: U64,
     shares: U32,
@@ -1840,8 +1844,8 @@ impl OrderReplace {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The original order reference number of the order being replaced
@@ -1879,7 +1883,7 @@ pub struct Trade {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     order_reference_number: U64,
     buy_sell_indicator: u8,
     shares: U32,
@@ -1906,8 +1910,8 @@ impl Trade {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The unique reference number assigned to the order on the book being executed.
@@ -1961,7 +1965,7 @@ pub struct CrossTrade {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     shares: U64,
     stock: Symbol,
     cross_price: Price4,
@@ -1987,8 +1991,8 @@ impl CrossTrade {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The number of shares matched in the Nasdaq Cross.
@@ -2035,7 +2039,7 @@ pub struct BrokenTrade {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     match_number: U64,
 }
 
@@ -2057,8 +2061,8 @@ impl BrokenTrade {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The Nasdaq Match Number of the execution that was broken.
@@ -2080,7 +2084,7 @@ pub struct NetOrderImbalanceIndicator {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     paired_shares: U64,
     imbalance_shares: U64,
     imbalance_direction: u8,
@@ -2110,8 +2114,8 @@ impl NetOrderImbalanceIndicator {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// The total number of shares that are eligible to be matched at the Current Reference Price.
@@ -2312,7 +2316,7 @@ pub struct RetailPriceImprovementIndicator {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     interest_flag: u8,
 }
@@ -2335,8 +2339,8 @@ impl RetailPriceImprovementIndicator {
 
     /// Nanoseconds since midnight.
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Stock symbol, right padded with spaces
@@ -2395,7 +2399,7 @@ pub struct DirectListingwithCapitalRaisePriceDiscovery {
     tag: u8,
     stock_locate: U16,
     tracking_number: U16,
-    timestamp: [u8; 6],
+    timestamp: Timestamp,
     stock: Symbol,
     open_eligibility_status: u8,
     minimum_allowable_price: Price4,
@@ -2424,8 +2428,8 @@ impl DirectListingwithCapitalRaisePriceDiscovery {
 
     /// Nanoseconds since midnight
     #[inline]
-    pub fn timestamp(&self) -> u64 {
-        read_u48(&self.timestamp)
+    pub const fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
     }
 
     /// Stock symbol, right padded with spaces
