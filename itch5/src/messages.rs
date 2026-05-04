@@ -172,7 +172,7 @@ impl StockDirectory {
         read_u48(&self.timestamp)
     }
     /// Denotes the security symbol for the issue in the Nasdaq execution system.
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// Indicates Listing market or listing market tier for the issue
@@ -1086,7 +1086,7 @@ impl AddOrderNoMPIDAttribution {
         self.shares.get()
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// The display price of the new order. Refer to Data Types for field processing notes.
@@ -1161,7 +1161,7 @@ impl AddOrderWithMPIDAttribution {
         self.shares.get()
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// The display price of the new order. Refer to Data Types for field processing notes.
@@ -1474,7 +1474,7 @@ impl TradeMessage {
         self.shares.get()
     }
     /// Stock Symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// The match price of the order
@@ -1530,7 +1530,7 @@ impl CrossTradeMessage {
         self.shares.get()
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// The price at which the cross occurred. Refer to Data Types for field processing notes.
@@ -1639,7 +1639,7 @@ impl NetOrderImbalanceIndicatorMessage {
         ImbalanceDirection::from(self.imbalance_direction)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// A hypothetical auction-clearing price for cross orders only.
@@ -1805,7 +1805,7 @@ impl RetailPriceImprovementIndicator {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// Interest Flag
@@ -1877,7 +1877,7 @@ impl DirectListingwithCapitalRaisePriceDiscoveryMessage {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &[u8; 8] {
         &self.stock
     }
     /// Indicates if the security is eligible to be released for trading
