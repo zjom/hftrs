@@ -5,13 +5,6 @@ use zerocopy::{
     network_endian::{U16, U32, U64},
 };
 
-#[inline]
-fn read_u48(bytes: &[u8; 6]) -> u64 {
-    let mut b = [0u8; 8];
-    b[2..].copy_from_slice(bytes);
-    u64::from_be_bytes(b)
-}
-
 /// Prices are integer fields, supplied with an associated precision. When converted to a decimal format, prices are in
 /// fixed point format, where the precision defines the number of decimal places. For example, a field flagged as Price
 /// (4) has an implied 4 decimal places. The maximum value of price (4) in TotalView ITCH is 200,000.0000 (decimal,
@@ -47,6 +40,44 @@ impl Price8 {
 
     pub fn into_f64(&self) -> f64 {
         self.into_u64() as f64 / 1_0000_0000.0
+    }
+}
+
+#[derive(
+    FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
+)]
+#[repr(transparent)]
+pub struct Symbol([u8; 8]);
+impl Symbol {
+    #[inline]
+    pub const fn hash(&self) -> u64 {
+        u64::from_be_bytes(self.0)
+    }
+
+    #[inline]
+    pub const fn from_hash(hash: u64) -> Symbol {
+        Symbol(hash.to_be_bytes())
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        str::from_utf8(&self.0).unwrap_or("unknown")
+    }
+}
+
+impl FromStr for Symbol {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() == 0 {
+            return Err("empty input");
+        }
+
+        let mut arr = [b' '; 8];
+        let upper = s.to_uppercase();
+        let bytes = upper.as_bytes();
+        let len = bytes.len().min(8);
+        arr[..len].copy_from_slice(&bytes[..len]);
+        Ok(Self(arr))
     }
 }
 
@@ -1932,42 +1963,12 @@ impl From<u8> for OpenEligibilityStatus {
     }
 }
 
-#[derive(
-    FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
-)]
-#[repr(transparent)]
-pub struct Symbol([u8; 8]);
-impl Symbol {
-    #[inline]
-    pub const fn hash(&self) -> u64 {
-        u64::from_be_bytes(self.0)
-    }
-
-    #[inline]
-    pub const fn from_hash(hash: u64) -> Symbol {
-        Symbol(hash.to_be_bytes())
-    }
-
-    #[inline]
-    pub fn as_str(&self) -> &str {
-        str::from_utf8(&self.0).unwrap_or("unknown")
-    }
-}
-
-impl FromStr for Symbol {
-    type Err = &'static str;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() == 0 {
-            return Err("empty input");
-        }
-
-        let mut arr = [b' '; 8];
-        let upper = s.to_uppercase();
-        let bytes = upper.as_bytes();
-        let len = bytes.len().min(8);
-        arr[..len].copy_from_slice(&bytes[..len]);
-        Ok(Self(arr))
-    }
+// -- private utils
+#[inline]
+fn read_u48(bytes: &[u8; 6]) -> u64 {
+    let mut b = [0u8; 8];
+    b[2..].copy_from_slice(bytes);
+    u64::from_be_bytes(b)
 }
 
 #[cfg(test)]
