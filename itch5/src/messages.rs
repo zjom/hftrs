@@ -139,7 +139,7 @@ pub struct StockDirectory {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     market_category: u8,
     financial_status_indicator: u8,
     round_lot_size: U32,
@@ -172,7 +172,7 @@ impl StockDirectory {
         read_u48(&self.timestamp)
     }
     /// Denotes the security symbol for the issue in the Nasdaq execution system.
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Indicates Listing market or listing market tier for the issue
@@ -452,7 +452,7 @@ pub struct StockTradingAction {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     trading_state: u8,
     reserved: u8,
     reason: [u8; 4],
@@ -475,7 +475,7 @@ impl StockTradingAction {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Indicates the current trading state for the stock.
@@ -536,7 +536,7 @@ pub struct RegSHORestriction {
     locate_code: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     reg_sho_action: u8,
 }
 
@@ -557,7 +557,7 @@ impl RegSHORestriction {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Denotes the Reg SHO Short Sale Price Test Restriction status for the issue at the time of the message dissemination.
@@ -604,7 +604,7 @@ pub struct MarketParticipantPosition {
     tracking_number: U16,
     timestamp: [u8; 6],
     mpid: [u8; 4],
-    stock: [u8; 8],
+    stock: Symbol,
     primary_market_maker: u8,
     market_maker_mode: u8,
     market_participant_state: u8,
@@ -631,7 +631,7 @@ impl MarketParticipantPosition {
         &self.mpid
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Indicates if the market participant firm qualifies as a Primary Market Maker in accordance with Nasdaq marketplace rules
@@ -833,7 +833,7 @@ pub struct QuotingPeriodUpdate {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     ipo_quotation_release_time: U32,
     ipo_quotation_release_qualifier: u8,
     ipo_price: Price4,
@@ -856,7 +856,7 @@ impl QuotingPeriodUpdate {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Denotes the IPO release time, in seconds since midnight, for quotation to the nearest second.
@@ -902,7 +902,7 @@ pub struct LULDAuctionCollar {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     auction_collar_reference_price: Price4,
     upper_auction_collar_price: Price4,
     lower_auction_collar_price: Price4,
@@ -926,7 +926,7 @@ impl LULDAuctionCollar {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Reference price used to set the Auction Collars
@@ -963,7 +963,7 @@ pub struct OperationalHalt {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     market_code: u8,
     operational_halt_action: u8,
 }
@@ -985,7 +985,7 @@ impl OperationalHalt {
         read_u48(&self.timestamp)
     }
     /// Denotes the security symbol for the issue in Nasdaq execution system
-    pub fn stock(&self) -> &[u8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Market Code
@@ -1053,7 +1053,7 @@ pub struct AddOrderNoMPIDAttribution {
     order_reference_number: U64,
     buy_sell_indicator: u8,
     shares: U32,
-    stock: [u8; 8],
+    stock: Symbol,
     price: Price4,
 }
 
@@ -1086,7 +1086,7 @@ impl AddOrderNoMPIDAttribution {
         self.shares.get()
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// The display price of the new order. Refer to Data Types for field processing notes.
@@ -1127,7 +1127,7 @@ pub struct AddOrderWithMPIDAttribution {
     order_reference_number: U64,
     buy_sell_indicator: u8,
     shares: U32,
-    stock: [u8; 8],
+    stock: Symbol,
     price: Price4,
     attribution: [u8; 4],
 }
@@ -1161,7 +1161,7 @@ impl AddOrderWithMPIDAttribution {
         self.shares.get()
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// The display price of the new order. Refer to Data Types for field processing notes.
@@ -1440,7 +1440,7 @@ pub struct TradeMessage {
     order_reference_number: U64,
     buy_sell_indicator: u8,
     shares: U32,
-    stock: [u8; 8],
+    stock: Symbol,
     price: Price4,
     match_number: U64,
 }
@@ -1474,7 +1474,7 @@ impl TradeMessage {
         self.shares.get()
     }
     /// Stock Symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// The match price of the order
@@ -1503,7 +1503,7 @@ pub struct CrossTradeMessage {
     tracking_number: U16,
     timestamp: [u8; 6],
     shares: U64,
-    stock: [u8; 8],
+    stock: Symbol,
     cross_price: Price4,
     match_number: U64,
     cross_type: u8,
@@ -1530,7 +1530,7 @@ impl CrossTradeMessage {
         self.shares.get()
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// The price at which the cross occurred. Refer to Data Types for field processing notes.
@@ -1602,7 +1602,7 @@ pub struct NetOrderImbalanceIndicatorMessage {
     paired_shares: U64,
     imbalance_shares: U64,
     imbalance_direction: u8,
-    stock: [u8; 8],
+    stock: Symbol,
     far_price: Price4,
     near_price: Price4,
     current_reference_price: Price4,
@@ -1639,7 +1639,7 @@ impl NetOrderImbalanceIndicatorMessage {
         ImbalanceDirection::from(self.imbalance_direction)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// A hypothetical auction-clearing price for cross orders only.
@@ -1784,7 +1784,7 @@ pub struct RetailPriceImprovementIndicator {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     interest_flag: u8,
 }
 
@@ -1805,7 +1805,7 @@ impl RetailPriceImprovementIndicator {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Interest Flag
@@ -1850,7 +1850,7 @@ pub struct DirectListingwithCapitalRaisePriceDiscoveryMessage {
     stock_locate: U16,
     tracking_number: U16,
     timestamp: [u8; 6],
-    stock: [u8; 8],
+    stock: Symbol,
     open_eligibility_status: u8,
     minimum_allowable_price: Price4,
     maximum_allowable_price: Price4,
@@ -1877,7 +1877,7 @@ impl DirectListingwithCapitalRaisePriceDiscoveryMessage {
         read_u48(&self.timestamp)
     }
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &[u8; 8] {
+    pub fn stock(&self) -> &Symbol {
         &self.stock
     }
     /// Indicates if the security is eligible to be released for trading
@@ -1927,5 +1927,25 @@ impl From<u8> for OpenEligibilityStatus {
             b'Y' => Self::Eligible,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct Symbol([u8; 8]);
+impl Symbol {
+    #[inline]
+    pub const fn hash(&self) -> u64 {
+        u64::from_ne_bytes(self.0)
+    }
+
+    #[inline]
+    pub const fn from_hash(hash: u64) -> Symbol {
+        Symbol(hash.to_ne_bytes())
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        str::from_utf8(&self.0).unwrap_or("unknown")
     }
 }
