@@ -1,3 +1,8 @@
+//! Definitions for types defined by the protocol plus some helper structs e.g., [`Symbol`]
+//! See docs on each struct for description or see the official protocol spec.
+//!
+//! [Nasdaq TotalView-ITCH 5.0](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf).
+
 use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
     network_endian::{U16, U32, U64},
