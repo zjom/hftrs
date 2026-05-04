@@ -69,8 +69,14 @@ impl Timestamp {
 
     #[inline]
     pub const fn to_dur(&self) -> std::time::Duration {
+        let (secs, nanos) = self.to_secs_and_nanos();
+        std::time::Duration::new(secs, nanos)
+    }
+
+    #[inline]
+    pub const fn to_secs_and_nanos(&self) -> (u64, u32) {
         let nanos = self.to_u64();
-        std::time::Duration::new(nanos / 1_000_000_000, (nanos % 1_000_000_000) as u32)
+        (nanos / 1_000_000_000, (nanos % 1_000_000_000) as u32)
     }
 }
 
