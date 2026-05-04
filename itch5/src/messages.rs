@@ -1444,9 +1444,9 @@ impl AddOrderNoMPIDAttribution {
         &self.stock
     }
 
-    /// #[inline]
-    /// The display price of the new order. Refer to Data Types for field processing notes const.
-    pub fn price(&self) -> &Price4 {
+    /// The display price of the new order. Refer to Data Types for field processing notes.
+    #[inline]
+    pub const fn price(&self) -> &Price4 {
         &self.price
     }
 }
