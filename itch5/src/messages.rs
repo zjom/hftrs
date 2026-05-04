@@ -94,6 +94,27 @@ impl std::str::FromStr for Symbol {
     }
 }
 
+/// Timestamp is u48 representing nano-seconds since midnight of a particular trading day.
+#[derive(
+    FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
+)]
+#[repr(transparent)]
+pub struct Timestamp([u8; 6]);
+impl Timestamp {
+    #[inline]
+    pub const fn to_u64(&self) -> u64 {
+        u64::from_be_bytes([
+            0, 0, self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5],
+        ])
+    }
+
+    #[inline]
+    pub const fn to_dur(&self) -> std::time::Duration {
+        let nanos = self.to_u64();
+        std::time::Duration::new(nanos / 1_000_000_000, (nanos % 1_000_000_000) as u32)
+    }
+}
+
 /// System Event Message
 /// The system event message type is used to signal a market or data feed handler event. The format is as follows:
 /// Name Offset Length Value Notes
