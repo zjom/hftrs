@@ -2,3 +2,17 @@
 members = ["orderbook", "itch5", "moldudp", "app"]
 resolver = "3"
 
+
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+ 
+# Inherit release optimizations for benches but keep symbols so we can
+# attach perf / generate flamegraphs.
+[profile.bench]
+inherits = "release"
+debug = true
