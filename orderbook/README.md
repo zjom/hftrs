@@ -80,12 +80,13 @@ Integration tests cover top-of-book queries, FIFO within a price level, partial 
 
 ## Roadmap
 
-- **Property tests with `proptest`.** The invariant "level `total_qty` equals the sum of resting order qtys at that price" should hold after any sequence of valid events. Same for `order_count` and the `OrderId → Index` map being injective onto live slots.
-- **End-to-end replay.** Pipe a recorded TotalView session through `MoldUDP64 → ITCH → book` and diff top-of-book snapshots against a Python reference (e.g. `nasdaq_protocols`).
-- **Vector-indexed price ladder variant** for symbols with a known tick band, with benchmarks against the `BTreeMap` baseline.
-- **`no_std` support.** The hot path doesn't touch the heap once the arena is sized; it's mostly a matter of swapping `HashMap` for `hashbrown` and dropping the `Display` impl on `BookError`.
-- **Self-trade prevention / crossed-book detection hooks.** Strictly a matching-engine concern, but the book should at least flag when a new order would lock or cross.
-- **`FxHashMap`** in place of the default hasher — measurable win once the order map is big.
+- [ ] **Property tests with `proptest`.** The invariant "level `total_qty` equals the sum of resting order qtys at that price" should hold after any sequence of valid events. Same for `order_count` and the `OrderId → Index` map being injective onto live slots.
+- [x] **End-to-end replay.** Pipe a recorded TotalView session through `MoldUDP64 → ITCH → book` and diff top-of-book snapshots against a Python reference (e.g. `nasdaq_protocols`).
+  - See [../app/](../app/).
+- [ ] **Vector-indexed price ladder variant** for symbols with a known tick band, with benchmarks against the `BTreeMap` baseline.
+- [ ] **`no_std` support.** The hot path doesn't touch the heap once the arena is sized; it's mostly a matter of swapping `HashMap` for `hashbrown` and dropping the `Display` impl on `BookError`.
+- [ ] **Self-trade prevention / crossed-book detection hooks.** Strictly a matching-engine concern, but the book should at least flag when a new order would lock or cross.
+- [ ] **`FxHashMap`** in place of the default hasher — measurable win once the order map is big.
 
 ## License
 
