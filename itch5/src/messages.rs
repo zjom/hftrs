@@ -1961,7 +1961,7 @@ impl FromStr for Symbol {
             return Err("empty input");
         }
 
-        let mut arr = [0u8; 8];
+        let mut arr = [b' '; 8];
         let upper = s.to_uppercase();
         let bytes = upper.as_bytes();
         let len = bytes.len().min(8);
