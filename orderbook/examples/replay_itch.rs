@@ -74,7 +74,7 @@ impl itch5::MessageHandler for Handler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_executed_message(&mut self, msg: &OrderExecutedMessage) -> ControlFlow<()> {
+    fn on_order_executed(&mut self, msg: &OrderExecuted) -> ControlFlow<()> {
         self.book
             .execute(
                 msg.order_reference_number(),
@@ -86,10 +86,7 @@ impl itch5::MessageHandler for Handler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_executed_with_price_message(
-        &mut self,
-        msg: &OrderExecutedWithPriceMessage,
-    ) -> ControlFlow<()> {
+    fn on_order_executed_with_price(&mut self, msg: &OrderExecutedWithPrice) -> ControlFlow<()> {
         self.book
             .execute(
                 msg.order_reference_number(),
@@ -101,19 +98,19 @@ impl itch5::MessageHandler for Handler {
         ControlFlow::Continue(())
     }
 
-    fn on_order_cancel_message(&mut self, msg: &OrderCancelMessage) -> ControlFlow<()> {
+    fn on_order_cancel(&mut self, msg: &OrderCancel) -> ControlFlow<()> {
         self.book
             .cancel(msg.order_reference_number(), msg.cancelled_shares() as u64)
             .unwrap();
         ControlFlow::Continue(())
     }
 
-    fn on_order_delete_message(&mut self, msg: &OrderDeleteMessage) -> ControlFlow<()> {
+    fn on_order_delete(&mut self, msg: &OrderDelete) -> ControlFlow<()> {
         self.book.delete(msg.order_reference_number()).unwrap();
         ControlFlow::Continue(())
     }
 
-    fn on_order_replace_message(&mut self, msg: &OrderReplaceMessage) -> ControlFlow<()> {
+    fn on_order_replace(&mut self, msg: &OrderReplace) -> ControlFlow<()> {
         self.book
             .replace(
                 msg.original_order_reference_number(),
