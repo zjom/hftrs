@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
     network_endian::{U16, U32, U64},
@@ -1947,5 +1949,20 @@ impl Symbol {
     #[inline]
     pub fn as_str(&self) -> &str {
         str::from_utf8(&self.0).unwrap_or("unknown")
+    }
+}
+
+impl FromStr for Symbol {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() == 0 {
+            return Err("empty input");
+        }
+
+        let mut arr = [0u8; 8];
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(8);
+        arr[..len].copy_from_slice(&bytes[..len]);
+        Ok(Self(arr))
     }
 }
