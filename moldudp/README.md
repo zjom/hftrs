@@ -213,6 +213,38 @@ h.shutdown();
 - **Pre-allocated buffer pool** — 1 024 × 512 KiB buffers. Buffers are
   returned to the pool when `Datagram` is dropped.
 
+## Benchmarks
+
+```sh
+taskset -c 3 cargo bench -p moldudp
+```
+
+The suite ([`benches/client_bench.rs`](benches/client_bench.rs)) splits
+the client into the parts an HFT consumer cares about separately:
+
+- **`moldudp/packet_parse/{1,10,100,1000}`** — the cost of parsing a
+  packet header and iterating its messages, varying message density
+  across four orders of magnitude. This is what the consumer pays
+  *per packet* once the bytes are in hand.
+- **`moldudp/client_single_msg`** — worst-case shape: 1k packets each
+  with one tiny message. All header overhead, no batching.
+- **`moldudp/client_batched`** — 1k packets × 10 small messages.
+- **`moldudp/client_itch_shape`** — 5k packets × 30 × 38 B
+  messages, which is roughly the densest shape an ITCH 5.0 feed gets
+  through MoldUDP framing under a 1500 B MTU.
+- **`moldudp/client_large_msg`** — 500 × 1 KiB messages, reported in
+  bytes/sec — useful when comparing against NIC line rate.
+- **`moldudp/client_retransmission/50_gaps_retransmitted`** —
+  alternates `send_dropped` / `send` to create 50 sequence gaps,
+  each filled by a retransmission round-trip through the same
+  pipeline. Measures the cost of the gap-detection + re-request +
+  merge path end-to-end.
+
+The throughput numbers are bounded by per-syscall UDP cost on
+loopback — they do not characterise a real NIC or a kernel-bypass
+deployment, and they are *not* a substitute for measuring against a
+production multicast feed.
+
 ## Roadmap
 
 - [ ] Zero-copy reads directly from the network socket (kernel bypass / `io_uring`)

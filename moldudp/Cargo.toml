@@ -13,7 +13,7 @@ tracing = "0.1.44"
 zerocopy = "0.8.48"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", default-features = false, features = ["html_reports", "cargo_bench_support"] }
 
 [[bench]]
 name = "client_bench"
