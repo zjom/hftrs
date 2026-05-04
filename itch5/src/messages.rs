@@ -1960,7 +1960,8 @@ impl FromStr for Symbol {
         }
 
         let mut arr = [0u8; 8];
-        let bytes = s.as_bytes();
+        let upper = s.to_uppercase();
+        let bytes = upper.as_bytes();
         let len = bytes.len().min(8);
         arr[..len].copy_from_slice(&bytes[..len]);
         Ok(Self(arr))
