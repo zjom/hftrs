@@ -14,16 +14,20 @@ use zerocopy::{
 pub struct Price4([u8; 4]);
 
 impl Price4 {
-    pub fn into_u32(&self) -> u32 {
+    #[inline]
+    pub const fn into_u32(&self) -> u32 {
         u32::from_be_bytes(self.0)
     }
 
-    pub fn into_f64(&self) -> f64 {
-        f64::from(self.into_u32()) / 10000.0
+    #[inline]
+    pub const fn into_i64(&self) -> i64 {
+        self.into_u32() as i64
     }
 
-    pub fn into_i64(&self) -> i64 {
-        self.into_u32() as i64
+    #[deprecated]
+    #[inline]
+    pub fn into_f64(&self) -> f64 {
+        f64::from(self.into_u32()) / 10000.0
     }
 }
 
@@ -34,11 +38,14 @@ impl Price4 {
 pub struct Price8([u8; 8]);
 
 impl Price8 {
-    pub fn into_u64(&self) -> u64 {
+    #[inline]
+    pub const fn into_u64(&self) -> u64 {
         u64::from_be_bytes(self.0)
     }
 
-    pub fn into_f64(&self) -> f64 {
+    #[deprecated]
+    #[inline]
+    pub const fn into_f64(&self) -> f64 {
         self.into_u64() as f64 / 1_0000_0000.0
     }
 }
