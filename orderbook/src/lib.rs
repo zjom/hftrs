@@ -8,6 +8,7 @@ pub mod book;
 pub mod error;
 pub mod level;
 pub mod pool;
+pub mod registry;
 pub mod types;
 
 pub use book::OrderBook;
