@@ -79,6 +79,7 @@ impl Symbol {
 
 impl std::str::FromStr for Symbol {
     type Err = &'static str;
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() == 0 {
             return Err("empty input");
@@ -115,17 +116,21 @@ impl SystemEvent {
     pub const LEN: usize = size_of::<Self>();
     pub const TAG: u8 = b'S';
 
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
-    pub fn event_code(&self) -> SystemEventCode {
-        SystemEventCode::from(self.event_code)
+    #[inline]
+    pub const fn event_code(&self) -> SystemEventCode {
+        SystemEventCode::from_byte(self.event_code)
     }
 }
 
@@ -155,7 +160,8 @@ pub enum SystemEventCode {
 }
 
 impl SystemEventCode {
-    pub fn from_byte(b: u8) -> Self {
+    #[inline]
+    pub const fn from_byte(b: u8) -> Self {
         match b {
             b'O' => Self::StartOfMessages,
             b'S' => Self::StartOfSystemHours,
@@ -168,6 +174,7 @@ impl SystemEventCode {
     }
 }
 impl From<u8> for SystemEventCode {
+    #[inline]
     fn from(value: u8) -> Self {
         SystemEventCode::from_byte(value)
     }
@@ -205,72 +212,105 @@ impl StockDirectory {
     pub const TAG: u8 = b'R';
 
     /// Locate Code uniquely assigned to the security symbol for the day.
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Time at which the directory message was generated. Refer to Data Types for field processing notes.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Denotes the security symbol for the issue in the Nasdaq execution system.
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Indicates Listing market or listing market tier for the issue
-    pub fn market_category(&self) -> MarketCategory {
-        MarketCategory::from(self.market_category)
+    #[inline]
+    pub const fn market_category(&self) -> MarketCategory {
+        MarketCategory::from_byte(self.market_category)
     }
+
     /// For Nasdaq listed issues, this field indicates when a firm is not in compliance with Nasdaq continued listing requirements
-    pub fn financial_status_indicator(&self) -> FinancialStatusIndicator {
-        FinancialStatusIndicator::from(self.financial_status_indicator)
+    #[inline]
+    pub const fn financial_status_indicator(&self) -> FinancialStatusIndicator {
+        FinancialStatusIndicator::from_byte(self.financial_status_indicator)
     }
+
     /// Denotes the number of shares that represent a round lot for the issue
-    pub fn round_lot_size(&self) -> u32 {
+    #[inline]
+    pub const fn round_lot_size(&self) -> u32 {
         self.round_lot_size.get()
     }
+
     /// Indicates if Nasdaq system limits order entry for issue
-    pub fn round_lots_only(&self) -> RoundLotsOnly {
-        RoundLotsOnly::from(self.round_lots_only)
+    #[inline]
+    pub const fn round_lots_only(&self) -> RoundLotsOnly {
+        RoundLotsOnly::from_byte(self.round_lots_only)
     }
+
     /// Identifies the security class for the issue as assigned by Nasdaq. See Appendix for allowable values.
-    pub fn issue_classification(&self) -> u8 {
+    #[inline]
+    pub const fn issue_classification(&self) -> u8 {
         self.issue_classification
     }
+
     /// Identifies the security sub-type for the issue as assigned by Nasdaq. See Appendix for allowable values.
-    pub fn issue_sub_type(&self) -> &[u8] {
+    #[inline]
+    pub const fn issue_sub_type(&self) -> &[u8] {
         &self.issue_sub_type
     }
+
     /// Denotes if an issue or quoting participant record is set-up in Nasdaq systems in a live/production, test, or demo state.
-    pub fn authenticity(&self) -> Authenticity {
-        Authenticity::from(self.authenticity)
+    #[inline]
+    pub const fn authenticity(&self) -> Authenticity {
+        Authenticity::from_byte(self.authenticity)
     }
+
     /// Indicates if a security is subject to mandatory close-out of short sales under SEC Rule 203(b)(3).
-    pub fn short_sale_threshold_indicator(&self) -> ShortSaleThresholdIndicator {
-        ShortSaleThresholdIndicator::from(self.short_sale_threshold_indicator)
+    #[inline]
+    pub const fn short_sale_threshold_indicator(&self) -> ShortSaleThresholdIndicator {
+        ShortSaleThresholdIndicator::from_byte(self.short_sale_threshold_indicator)
     }
+
     /// Indicates if the Nasdaq security is set up for IPO release.
-    pub fn ipo_flag(&self) -> IpoFlag {
-        IpoFlag::from(self.ipo_flag)
+    #[inline]
+    pub const fn ipo_flag(&self) -> IpoFlag {
+        IpoFlag::from_byte(self.ipo_flag)
     }
+
     /// Indicates which Limit Up / Limit Down price band calculation parameter is to be used for the instrument.
-    pub fn luld_reference_price_tier(&self) -> LuldReferencePriceTier {
-        LuldReferencePriceTier::from(self.luld_reference_price_tier)
+    #[inline]
+    pub const fn luld_reference_price_tier(&self) -> LuldReferencePriceTier {
+        LuldReferencePriceTier::from_byte(self.luld_reference_price_tier)
     }
+
     /// Indicates whether the security is an exchange traded product (ETP).
-    pub fn etp_flag(&self) -> EtpFlag {
-        EtpFlag::from(self.etp_flag)
+    #[inline]
+    pub const fn etp_flag(&self) -> EtpFlag {
+        EtpFlag::from_byte(self.etp_flag)
     }
+
     /// Tracks the integral relationship of the ETP to the underlying index.
-    pub fn etp_leverage_factor(&self) -> u32 {
+    #[inline]
+    pub const fn etp_leverage_factor(&self) -> u32 {
         self.etp_leverage_factor.get()
     }
+
     /// Indicates the directional relationship between the ETP and Underlying index.
-    pub fn inverse_indicator(&self) -> InverseIndicator {
-        InverseIndicator::from(self.inverse_indicator)
+    #[inline]
+    pub const fn inverse_indicator(&self) -> InverseIndicator {
+        InverseIndicator::from_byte(self.inverse_indicator)
     }
 }
 
@@ -289,9 +329,10 @@ pub enum MarketCategory {
     Unknown(u8),
 }
 
-impl From<u8> for MarketCategory {
-    fn from(value: u8) -> Self {
-        match value {
+impl MarketCategory {
+    #[inline]
+    pub const fn from_byte(b: u8) -> Self {
+        match b {
             b'Q' => Self::NasdaqGlobalSelectMarket,
             b'G' => Self::NasdaqGlobalMarket,
             b'S' => Self::NasdaqCapitalMarket,
@@ -303,6 +344,13 @@ impl From<u8> for MarketCategory {
             b' ' => Self::NotAvailable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for MarketCategory {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -322,8 +370,9 @@ pub enum FinancialStatusIndicator {
     Unknown(u8),
 }
 
-impl From<u8> for FinancialStatusIndicator {
-    fn from(value: u8) -> Self {
+impl FinancialStatusIndicator {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'D' => Self::Deficient,
             b'E' => Self::Delinquent,
@@ -340,6 +389,13 @@ impl From<u8> for FinancialStatusIndicator {
     }
 }
 
+impl From<u8> for FinancialStatusIndicator {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
+    }
+}
+
 #[derive(Debug)]
 #[repr(u8)]
 pub enum RoundLotsOnly {
@@ -347,14 +403,21 @@ pub enum RoundLotsOnly {
     No = b'N',
     Unknown(u8),
 }
-
-impl From<u8> for RoundLotsOnly {
-    fn from(value: u8) -> Self {
+impl RoundLotsOnly {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Y' => Self::Yes,
             b'N' => Self::No,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for RoundLotsOnly {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -365,13 +428,21 @@ pub enum Authenticity {
     Unknown(u8),
 }
 
-impl From<u8> for Authenticity {
-    fn from(value: u8) -> Self {
+impl Authenticity {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'P' => Self::LiveProduction,
             b'T' => Self::Test,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for Authenticity {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -384,14 +455,22 @@ pub enum ShortSaleThresholdIndicator {
     Unknown(u8),
 }
 
-impl From<u8> for ShortSaleThresholdIndicator {
-    fn from(value: u8) -> Self {
+impl ShortSaleThresholdIndicator {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Y' => Self::Restricted,
             b'N' => Self::NotRestricted,
             b' ' => Self::NotAvailable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for ShortSaleThresholdIndicator {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -404,14 +483,22 @@ pub enum IpoFlag {
     Unknown(u8),
 }
 
-impl From<u8> for IpoFlag {
-    fn from(value: u8) -> Self {
+impl IpoFlag {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Y' => Self::NewIPO,
             b'N' => Self::NotNewIPO,
             b' ' => Self::NotAvailable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for IpoFlag {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -424,14 +511,22 @@ pub enum LuldReferencePriceTier {
     Unknown(u8),
 }
 
-impl From<u8> for LuldReferencePriceTier {
-    fn from(value: u8) -> Self {
+impl LuldReferencePriceTier {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'1' => Self::Tier1,
             b'2' => Self::Tier2,
             b' ' => Self::NotAvailable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for LuldReferencePriceTier {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -444,14 +539,21 @@ pub enum EtpFlag {
     Unknown(u8),
 }
 
-impl From<u8> for EtpFlag {
-    fn from(value: u8) -> Self {
+impl EtpFlag {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Y' => Self::IsETP,
             b'N' => Self::NotETP,
             b' ' => Self::NotAvailable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+impl From<u8> for EtpFlag {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -463,13 +565,21 @@ pub enum InverseIndicator {
     Unknown(u8),
 }
 
-impl From<u8> for InverseIndicator {
-    fn from(value: u8) -> Self {
+impl InverseIndicator {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Y' => Self::Inverse,
             b'N' => Self::NotInverse,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for InverseIndicator {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -508,31 +618,44 @@ impl StockTradingAction {
     pub const TAG: u8 = b'H';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Indicates the current trading state for the stock.
-    pub fn trading_state(&self) -> TradingState {
-        TradingState::from(self.trading_state)
+    #[inline]
+    pub const fn trading_state(&self) -> TradingState {
+        TradingState::from_byte(self.trading_state)
     }
+
     /// Reserved.
-    pub fn reserved(&self) -> u8 {
+    #[inline]
+    pub const fn reserved(&self) -> u8 {
         self.reserved
     }
+
     /// Trading Action reason.
-    pub fn reason(&self) -> &[u8] {
+    #[inline]
+    pub const fn reason(&self) -> &[u8] {
         &self.reason
     }
 }
@@ -551,8 +674,9 @@ pub enum TradingState {
     Unknown(u8),
 }
 
-impl From<u8> for TradingState {
-    fn from(value: u8) -> Self {
+impl TradingState {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'H' => Self::Halted,
             b'P' => Self::Paused,
@@ -560,6 +684,13 @@ impl From<u8> for TradingState {
             b'T' => Self::Trading,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for TradingState {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -590,24 +721,33 @@ impl RegSHORestriction {
     pub const TAG: u8 = b'Y';
 
     /// Locate code identifying the security
-    pub fn locate_code(&self) -> u16 {
+    #[inline]
+    pub const fn locate_code(&self) -> u16 {
         self.locate_code.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Denotes the Reg SHO Short Sale Price Test Restriction status for the issue at the time of the message dissemination.
-    pub fn reg_sho_action(&self) -> RegShoAction {
-        RegShoAction::from(self.reg_sho_action)
+    #[inline]
+    pub const fn reg_sho_action(&self) -> RegShoAction {
+        RegShoAction::from_byte(self.reg_sho_action)
     }
 }
 
@@ -623,14 +763,22 @@ pub enum RegShoAction {
     Unknown(u8),
 }
 
-impl From<u8> for RegShoAction {
-    fn from(value: u8) -> Self {
+impl RegShoAction {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'0' => Self::NoPriceTest,
             b'1' => Self::RestrictionInEffectIntradayDrop,
             b'2' => Self::RestrictionRemainsInEffect,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for RegShoAction {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -660,36 +808,50 @@ impl MarketParticipantPosition {
     pub const TAG: u8 = b'L';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Denotes the market participant identifier for which the position message is being generated
-    pub fn mpid(&self) -> &[u8] {
+    #[inline]
+    pub const fn mpid(&self) -> &[u8] {
         &self.mpid
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Indicates if the market participant firm qualifies as a Primary Market Maker in accordance with Nasdaq marketplace rules
-    pub fn primary_market_maker(&self) -> PrimaryMarketMaker {
-        PrimaryMarketMaker::from(self.primary_market_maker)
+    #[inline]
+    pub const fn primary_market_maker(&self) -> PrimaryMarketMaker {
+        PrimaryMarketMaker::from_byte(self.primary_market_maker)
     }
     /// Indicates the quoting participant's registration status in relation to SEC Rules 101 and 104 of Regulation M
-    pub fn market_maker_mode(&self) -> MarketMakerMode {
-        MarketMakerMode::from(self.market_maker_mode)
+    #[inline]
+    pub const fn market_maker_mode(&self) -> MarketMakerMode {
+        MarketMakerMode::from_byte(self.market_maker_mode)
     }
+
     /// Indicates the market participant's current registration status in the issue
-    pub fn market_participant_state(&self) -> MarketParticipantState {
-        MarketParticipantState::from(self.market_participant_state)
+    #[inline]
+    pub const fn market_participant_state(&self) -> MarketParticipantState {
+        MarketParticipantState::from_byte(self.market_participant_state)
     }
 }
 
@@ -703,13 +865,21 @@ pub enum PrimaryMarketMaker {
     Unknown(u8),
 }
 
-impl From<u8> for PrimaryMarketMaker {
-    fn from(value: u8) -> Self {
+impl PrimaryMarketMaker {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Y' => Self::Primary,
             b'N' => Self::NonPrimary,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for PrimaryMarketMaker {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -728,8 +898,9 @@ pub enum MarketMakerMode {
     Unknown(u8),
 }
 
-impl From<u8> for MarketMakerMode {
-    fn from(value: u8) -> Self {
+impl MarketMakerMode {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'N' => Self::Normal,
             b'P' => Self::Passive,
@@ -738,6 +909,13 @@ impl From<u8> for MarketMakerMode {
             b'L' => Self::Penalty,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for MarketMakerMode {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -757,8 +935,9 @@ pub enum MarketParticipantState {
     Unknown(u8),
 }
 
-impl From<u8> for MarketParticipantState {
-    fn from(value: u8) -> Self {
+impl MarketParticipantState {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'A' => Self::Active,
             b'E' => Self::ExcusedWithdrawn,
@@ -767,6 +946,13 @@ impl From<u8> for MarketParticipantState {
             b'D' => Self::Deleted,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for MarketParticipantState {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -788,27 +974,38 @@ impl MWCBDeclineLevel {
     pub const TAG: u8 = b'V';
 
     /// Always set to 0
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Time at which the MWCB Decline Level message was generated
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Denotes the MWCB Level 1 Value.
-    pub fn level_1(&self) -> &Price8 {
+    #[inline]
+    pub const fn level_1(&self) -> &Price8 {
         &self.level_1
     }
+
     /// Denotes the MWCB Level 2 Value.
-    pub fn level_2(&self) -> &Price8 {
+    #[inline]
+    pub const fn level_2(&self) -> &Price8 {
         &self.level_2
     }
+
     /// Denotes the MWCB Level 3 Value.
-    pub fn level_3(&self) -> &Price8 {
+    #[inline]
+    pub const fn level_3(&self) -> &Price8 {
         &self.level_3
     }
 }
@@ -829,20 +1026,27 @@ impl MWCBStatus {
     pub const TAG: u8 = b'W';
 
     /// Always set to 0
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Time at which the MWCB Breaker Status message was generated
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Denotes the MWCB Level that was breached.
-    pub fn breached_level(&self) -> BreachedLevel {
-        BreachedLevel::from(self.breached_level)
+    #[inline]
+    pub const fn breached_level(&self) -> BreachedLevel {
+        BreachedLevel::from_byte(self.breached_level)
     }
 }
 
@@ -858,14 +1062,22 @@ pub enum BreachedLevel {
     Unknown(u8),
 }
 
-impl From<u8> for BreachedLevel {
-    fn from(value: u8) -> Self {
+impl BreachedLevel {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'1' => Self::Level1,
             b'2' => Self::Level2,
             b'3' => Self::Level3,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for BreachedLevel {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -889,31 +1101,44 @@ impl QuotingPeriodUpdate {
     pub const TAG: u8 = b'K';
 
     /// Always set to 0
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Time at which the IPO Quoting Period Update message was generated
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Denotes the IPO release time, in seconds since midnight, for quotation to the nearest second.
-    pub fn ipo_quotation_release_time(&self) -> u32 {
+    #[inline]
+    pub const fn ipo_quotation_release_time(&self) -> u32 {
         self.ipo_quotation_release_time.get()
     }
+
     /// Anticipated Quotation Release Time or IPO Release Canceled/Postponed
-    pub fn ipo_quotation_release_qualifier(&self) -> IpoQuotationReleaseQualifier {
-        IpoQuotationReleaseQualifier::from(self.ipo_quotation_release_qualifier)
+    #[inline]
+    pub const fn ipo_quotation_release_qualifier(&self) -> IpoQuotationReleaseQualifier {
+        IpoQuotationReleaseQualifier::from_byte(self.ipo_quotation_release_qualifier)
     }
+
     /// Denotes the IPO Price to be used for intraday net change calculations.
-    pub fn ipo_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn ipo_price(&self) -> &Price4 {
         &self.ipo_price
     }
 }
@@ -928,13 +1153,21 @@ pub enum IpoQuotationReleaseQualifier {
     Unknown(u8),
 }
 
-impl From<u8> for IpoQuotationReleaseQualifier {
-    fn from(value: u8) -> Self {
+impl IpoQuotationReleaseQualifier {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'A' => Self::Anticipated,
             b'C' => Self::CanceledPostponed,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for IpoQuotationReleaseQualifier {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -959,35 +1192,50 @@ impl LULDAuctionCollar {
     pub const TAG: u8 = b'J';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds past midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Reference price used to set the Auction Collars
-    pub fn auction_collar_reference_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn auction_collar_reference_price(&self) -> &Price4 {
         &self.auction_collar_reference_price
     }
+
     /// Indicates the price of the Upper Auction Collar Threshold
-    pub fn upper_auction_collar_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn upper_auction_collar_price(&self) -> &Price4 {
         &self.upper_auction_collar_price
     }
+
     /// Indicates the price of the Lower Auction Collar Threshold
-    pub fn lower_auction_collar_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn lower_auction_collar_price(&self) -> &Price4 {
         &self.lower_auction_collar_price
     }
+
     /// Indicates the number of the extensions to the Reopening Auction
-    pub fn auction_collar_extension(&self) -> &Price4 {
+    #[inline]
+    pub const fn auction_collar_extension(&self) -> &Price4 {
         &self.auction_collar_extension
     }
 }
@@ -1018,28 +1266,39 @@ impl OperationalHalt {
     pub const TAG: u8 = b'h';
 
     /// Locate code uniquely assigned to the security symbol for the day.
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Time at which the Operational Halt message was generated.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Denotes the security symbol for the issue in Nasdaq execution system
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Market Code
-    pub fn market_code(&self) -> MarketCode {
-        MarketCode::from(self.market_code)
+    #[inline]
+    pub const fn market_code(&self) -> MarketCode {
+        MarketCode::from_byte(self.market_code)
     }
+
     /// Operational Halt Action
-    pub fn operational_halt_action(&self) -> OperationalHaltAction {
-        OperationalHaltAction::from(self.operational_halt_action)
+    #[inline]
+    pub const fn operational_halt_action(&self) -> OperationalHaltAction {
+        OperationalHaltAction::from_byte(self.operational_halt_action)
     }
 }
 
@@ -1055,14 +1314,22 @@ pub enum MarketCode {
     Unknown(u8),
 }
 
-impl From<u8> for MarketCode {
-    fn from(value: u8) -> Self {
+impl MarketCode {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'Q' => Self::Nasdaq,
             b'B' => Self::BX,
             b'X' => Self::PSX,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for MarketCode {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1076,13 +1343,21 @@ pub enum OperationalHaltAction {
     Unknown(u8),
 }
 
-impl From<u8> for OperationalHaltAction {
-    fn from(value: u8) -> Self {
+impl OperationalHaltAction {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'H' => Self::OperationallyHalted,
             b'T' => Self::TradingResumed,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for OperationalHaltAction {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1107,34 +1382,49 @@ impl AddOrderNoMPIDAttribution {
     pub const TAG: u8 = b'A';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The unique reference number assigned to the new order at the time of receipt.
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
+
     /// The type of order being added.
-    pub fn buy_sell_indicator(&self) -> BuySellIndicator {
-        BuySellIndicator::from(self.buy_sell_indicator)
+    #[inline]
+    pub const fn buy_sell_indicator(&self) -> BuySellIndicator {
+        BuySellIndicator::from_byte(self.buy_sell_indicator)
     }
+
     /// The total number of shares associated with the order being added to the book.
-    pub fn shares(&self) -> u32 {
+    #[inline]
+    pub const fn shares(&self) -> u32 {
         self.shares.get()
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
-    /// The display price of the new order. Refer to Data Types for field processing notes.
+
+    /// #[inline]
+    /// The display price of the new order. Refer to Data Types for field processing notes const.
     pub fn price(&self) -> &Price4 {
         &self.price
     }
@@ -1150,13 +1440,21 @@ pub enum BuySellIndicator {
     Unknown(u8),
 }
 
-impl From<u8> for BuySellIndicator {
-    fn from(value: u8) -> Self {
+impl BuySellIndicator {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'B' => Self::Buy,
             b'S' => Self::Sell,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for BuySellIndicator {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1182,39 +1480,56 @@ impl AddOrderWithMPIDAttribution {
     pub const TAG: u8 = b'F';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The unique reference number assigned to the new order at the time of receipt.
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
+
     /// The type of order being added.
-    pub fn buy_sell_indicator(&self) -> BuySellIndicator {
-        BuySellIndicator::from(self.buy_sell_indicator)
+    #[inline]
+    pub const fn buy_sell_indicator(&self) -> BuySellIndicator {
+        BuySellIndicator::from_byte(self.buy_sell_indicator)
     }
+
     /// The total number of shares associated with the order being added to the book
-    pub fn shares(&self) -> u32 {
+    #[inline]
+    pub const fn shares(&self) -> u32 {
         self.shares.get()
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
-    /// The display price of the new order. Refer to Data Types for field processing notes.
-    pub fn price(&self) -> &Price4 {
+
+    /// The display price of the new order. Refer to Data Types for field processing notes const.
+    #[inline]
+    pub const fn price(&self) -> &Price4 {
         &self.price
     }
+
     /// Nasdaq Market participant identifier associated with the entered order
-    pub fn attribution(&self) -> &[u8] {
+    #[inline]
+    pub const fn attribution(&self) -> &[u8] {
         &self.attribution
     }
 }
@@ -1242,27 +1557,38 @@ impl OrderExecuted {
     pub const TAG: u8 = b'E';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The unique reference number assigned to the new order at the time of receipt
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
+
     /// The number of shares executed
-    pub fn executed_shares(&self) -> u32 {
+    #[inline]
+    pub const fn executed_shares(&self) -> u32 {
         self.executed_shares.get()
     }
+
     /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
-    pub fn match_number(&self) -> u64 {
+    #[inline]
+    pub const fn match_number(&self) -> u64 {
         self.match_number.get()
     }
 }
@@ -1296,35 +1622,50 @@ impl OrderExecutedWithPrice {
     pub const TAG: u8 = b'C';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The unique reference number assigned to the new order at the time of receipt
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
+
     /// The number of shares executed
-    pub fn executed_shares(&self) -> u32 {
+    #[inline]
+    pub const fn executed_shares(&self) -> u32 {
         self.executed_shares.get()
     }
+
     /// The Nasdaq generated day unique Match Number of this execution. The Match Number is also referenced in the Trade Break Message
-    pub fn match_number(&self) -> u64 {
+    #[inline]
+    pub const fn match_number(&self) -> u64 {
         self.match_number.get()
     }
+
     /// Indicates if the execution should be reflected on time and sales displays and volume calculations
-    pub fn printable(&self) -> Printable {
-        Printable::from(self.printable)
+    #[inline]
+    pub const fn printable(&self) -> Printable {
+        Printable::from_byte(self.printable)
     }
+
     /// The Price at which the order execution occurred. Refer to Data Types for field processing notes
-    pub fn execution_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn execution_price(&self) -> &Price4 {
         &self.execution_price
     }
 }
@@ -1339,13 +1680,20 @@ pub enum Printable {
     Unknown(u8),
 }
 
-impl From<u8> for Printable {
-    fn from(value: u8) -> Self {
+impl Printable {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'N' => Self::NonPrintable,
             b'Y' => Self::Printable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for Printable {
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1367,23 +1715,32 @@ impl OrderCancel {
     pub const TAG: u8 = b'X';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The reference number of the order being canceled
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
+
     /// The number of shares being removed from the display size of the order as a result of a cancellation
-    pub fn cancelled_shares(&self) -> u32 {
+    #[inline]
+    pub const fn cancelled_shares(&self) -> u32 {
         self.cancelled_shares.get()
     }
 }
@@ -1405,19 +1762,26 @@ impl OrderDelete {
     pub const TAG: u8 = b'D';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The reference number of the order being canceled
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
 }
@@ -1442,31 +1806,44 @@ impl OrderReplace {
     pub const TAG: u8 = b'U';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The original order reference number of the order being replaced
-    pub fn original_order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn original_order_reference_number(&self) -> u64 {
         self.original_order_reference_number.get()
     }
+
     /// The new reference number for this order at time of replacement
-    pub fn new_order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn new_order_reference_number(&self) -> u64 {
         self.new_order_reference_number.get()
     }
+
     /// The new total displayed quantity
-    pub fn shares(&self) -> u32 {
+    #[inline]
+    pub const fn shares(&self) -> u32 {
         self.shares.get()
     }
+
     /// The new display price for the order
-    pub fn price(&self) -> &Price4 {
+    #[inline]
+    pub const fn price(&self) -> &Price4 {
         &self.price
     }
 }
@@ -1495,39 +1872,56 @@ impl Trade {
     pub const TAG: u8 = b'P';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The unique reference number assigned to the order on the book being executed.
-    pub fn order_reference_number(&self) -> u64 {
+    #[inline]
+    pub const fn order_reference_number(&self) -> u64 {
         self.order_reference_number.get()
     }
+
     /// The type of non-display order on the book being matched
-    pub fn buy_sell_indicator(&self) -> BuySellIndicator {
-        BuySellIndicator::from(self.buy_sell_indicator)
+    #[inline]
+    pub const fn buy_sell_indicator(&self) -> BuySellIndicator {
+        BuySellIndicator::from_byte(self.buy_sell_indicator)
     }
+
     /// The number of shares being matched in this execution
-    pub fn shares(&self) -> u32 {
+    #[inline]
+    pub const fn shares(&self) -> u32 {
         self.shares.get()
     }
+
     /// Stock Symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// The match price of the order
-    pub fn price(&self) -> &Price4 {
+    #[inline]
+    pub const fn price(&self) -> &Price4 {
         &self.price
     }
+
     /// The Nasdaq generated session unique Match Number for this trade
-    pub fn match_number(&self) -> u64 {
+    #[inline]
+    pub const fn match_number(&self) -> u64 {
         self.match_number.get()
     }
 }
@@ -1559,36 +1953,51 @@ impl CrossTrade {
     pub const TAG: u8 = b'Q';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The number of shares matched in the Nasdaq Cross.
-    pub fn shares(&self) -> u64 {
+    #[inline]
+    pub const fn shares(&self) -> u64 {
         self.shares.get()
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// The price at which the cross occurred. Refer to Data Types for field processing notes.
-    pub fn cross_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn cross_price(&self) -> &Price4 {
         &self.cross_price
     }
+
     /// The Nasdaq generated day-unique Match Number of this execution.
-    pub fn match_number(&self) -> u64 {
+    #[inline]
+    pub const fn match_number(&self) -> u64 {
         self.match_number.get()
     }
+
     /// The Nasdaq cross session for which the message is being generated.
-    pub fn cross_type(&self) -> CrossType {
-        CrossType::from(self.cross_type)
+    #[inline]
+    pub const fn cross_type(&self) -> CrossType {
+        CrossType::from_byte(self.cross_type)
     }
 }
 
@@ -1614,19 +2023,26 @@ impl BrokenTrade {
     pub const TAG: u8 = b'B';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The Nasdaq Match Number of the execution that was broken.
-    pub fn match_number(&self) -> u64 {
+    #[inline]
+    pub const fn match_number(&self) -> u64 {
         self.match_number.get()
     }
 }
@@ -1660,52 +2076,75 @@ impl NetOrderImbalanceIndicator {
     pub const TAG: u8 = b'I';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// The total number of shares that are eligible to be matched at the Current Reference Price.
-    pub fn paired_shares(&self) -> u64 {
+    #[inline]
+    pub const fn paired_shares(&self) -> u64 {
         self.paired_shares.get()
     }
+
     /// The number of shares not paired at the Current Reference Price.
-    pub fn imbalance_shares(&self) -> u64 {
+    #[inline]
+    pub const fn imbalance_shares(&self) -> u64 {
         self.imbalance_shares.get()
     }
+
     /// The market side of the order imbalance.
-    pub fn imbalance_direction(&self) -> ImbalanceDirection {
-        ImbalanceDirection::from(self.imbalance_direction)
+    #[inline]
+    pub const fn imbalance_direction(&self) -> ImbalanceDirection {
+        ImbalanceDirection::from_byte(self.imbalance_direction)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// A hypothetical auction-clearing price for cross orders only.
-    pub fn far_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn far_price(&self) -> &Price4 {
         &self.far_price
     }
+
     /// A hypothetical auction-clearing price for cross orders as well as continuous orders.
-    pub fn near_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn near_price(&self) -> &Price4 {
         &self.near_price
     }
+
     /// The price at which the NOII shares are being calculated.
-    pub fn current_reference_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn current_reference_price(&self) -> &Price4 {
         &self.current_reference_price
     }
+
     /// The type of Nasdaq cross for which the NOII message is being generated
-    pub fn cross_type(&self) -> CrossType {
-        CrossType::from(self.cross_type)
+    #[inline]
+    pub const fn cross_type(&self) -> CrossType {
+        CrossType::from_byte(self.cross_type)
     }
+
     /// This field indicates the absolute value of the percentage of deviation of the Near Indicative Clearing Price to the nearest Current Reference Price.
-    pub fn price_variation_indicator(&self) -> PriceVariationIndicator {
-        PriceVariationIndicator::from(self.price_variation_indicator)
+    #[inline]
+    pub const fn price_variation_indicator(&self) -> PriceVariationIndicator {
+        PriceVariationIndicator::from_byte(self.price_variation_indicator)
     }
 }
 
@@ -1725,8 +2164,9 @@ pub enum ImbalanceDirection {
     Unknown(u8),
 }
 
-impl From<u8> for ImbalanceDirection {
-    fn from(value: u8) -> Self {
+impl ImbalanceDirection {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'B' => Self::Buy,
             b'S' => Self::Sell,
@@ -1735,6 +2175,13 @@ impl From<u8> for ImbalanceDirection {
             b'P' => Self::Paused,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for ImbalanceDirection {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1752,8 +2199,9 @@ pub enum CrossType {
     Unknown(u8),
 }
 
-impl From<u8> for CrossType {
-    fn from(value: u8) -> Self {
+impl CrossType {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'O' => Self::NasdaqOpeningCross,
             b'C' => Self::NasdaqClosingCross,
@@ -1761,6 +2209,13 @@ impl From<u8> for CrossType {
             b'A' => Self::ExtendedTradingClose,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for CrossType {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1798,8 +2253,9 @@ pub enum PriceVariationIndicator {
     Unknown(u8),
 }
 
-impl From<u8> for PriceVariationIndicator {
-    fn from(value: u8) -> Self {
+impl PriceVariationIndicator {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'L' => Self::LessThan1Percent,
             b'1' => Self::Between1And1_99Percent,
@@ -1817,6 +2273,13 @@ impl From<u8> for PriceVariationIndicator {
             b' ' => Self::CannotBeCalculated,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for PriceVariationIndicator {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1838,24 +2301,33 @@ impl RetailPriceImprovementIndicator {
     pub const TAG: u8 = b'N';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight.
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Interest Flag
-    pub fn interest_flag(&self) -> InterestFlag {
-        InterestFlag::from(self.interest_flag)
+    #[inline]
+    pub const fn interest_flag(&self) -> InterestFlag {
+        InterestFlag::from_byte(self.interest_flag)
     }
 }
 
@@ -1873,8 +2345,9 @@ pub enum InterestFlag {
     Unknown(u8),
 }
 
-impl From<u8> for InterestFlag {
-    fn from(value: u8) -> Self {
+impl InterestFlag {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'B' => Self::BuySide,
             b'S' => Self::SellSide,
@@ -1882,6 +2355,13 @@ impl From<u8> for InterestFlag {
             b'N' => Self::NoneAvailable,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for InterestFlag {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
@@ -1910,47 +2390,68 @@ impl DirectListingwithCapitalRaisePriceDiscovery {
     pub const TAG: u8 = b'O';
 
     /// Locate code identifying the security
-    pub fn stock_locate(&self) -> u16 {
+    #[inline]
+    pub const fn stock_locate(&self) -> u16 {
         self.stock_locate.get()
     }
+
     /// Nasdaq internal tracking number
-    pub fn tracking_number(&self) -> u16 {
+    #[inline]
+    pub const fn tracking_number(&self) -> u16 {
         self.tracking_number.get()
     }
+
     /// Nanoseconds since midnight
+    #[inline]
     pub fn timestamp(&self) -> u64 {
         read_u48(&self.timestamp)
     }
+
     /// Stock symbol, right padded with spaces
-    pub fn stock(&self) -> &Symbol {
+    #[inline]
+    pub const fn stock(&self) -> &Symbol {
         &self.stock
     }
+
     /// Indicates if the security is eligible to be released for trading
-    pub fn open_eligibility_status(&self) -> OpenEligibilityStatus {
-        OpenEligibilityStatus::from(self.open_eligibility_status)
+    #[inline]
+    pub const fn open_eligibility_status(&self) -> OpenEligibilityStatus {
+        OpenEligibilityStatus::from_byte(self.open_eligibility_status)
     }
+
     /// 20% below Registration Statement Lower Price
-    pub fn minimum_allowable_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn minimum_allowable_price(&self) -> &Price4 {
         &self.minimum_allowable_price
     }
+
     /// 80% above Registration Statement Highest Price
-    pub fn maximum_allowable_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn maximum_allowable_price(&self) -> &Price4 {
         &self.maximum_allowable_price
     }
+
     /// The current reference price when the DLCR volatility test has successfully passed
-    pub fn near_execution_price(&self) -> &Price4 {
+    #[inline]
+    pub const fn near_execution_price(&self) -> &Price4 {
         &self.near_execution_price
     }
+
     /// The time at which the near execution price was set
-    pub fn near_execution_time(&self) -> u64 {
+    #[inline]
+    pub const fn near_execution_time(&self) -> u64 {
         self.near_execution_time.get()
     }
+
     /// Indicates the price of the Lower Auction Collar Threshold (10% below the Near Execution Price)
-    pub fn lower_price_range_collar(&self) -> &Price4 {
+    #[inline]
+    pub const fn lower_price_range_collar(&self) -> &Price4 {
         &self.lower_price_range_collar
     }
+
     /// Indicates the price of the Upper Auction Collar Threshold (10% above the Near Execution Price)
-    pub fn upper_price_range_collar(&self) -> &Price4 {
+    #[inline]
+    pub const fn upper_price_range_collar(&self) -> &Price4 {
         &self.upper_price_range_collar
     }
 }
@@ -1965,13 +2466,21 @@ pub enum OpenEligibilityStatus {
     Unknown(u8),
 }
 
-impl From<u8> for OpenEligibilityStatus {
-    fn from(value: u8) -> Self {
+impl OpenEligibilityStatus {
+    #[inline]
+    pub const fn from_byte(value: u8) -> Self {
         match value {
             b'N' => Self::NotEligible,
             b'Y' => Self::Eligible,
             unknown => Self::Unknown(unknown),
         }
+    }
+}
+
+impl From<u8> for OpenEligibilityStatus {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self::from_byte(value)
     }
 }
 
