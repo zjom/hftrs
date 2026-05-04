@@ -694,8 +694,25 @@ impl StockTradingAction {
 
     /// Trading Action reason.
     #[inline]
-    pub const fn reason(&self) -> &[u8] {
-        &self.reason
+    pub const fn reason(&self) -> TradingActionReason {
+        match self.trading_state() {
+            TradingState::Halted => {
+                TradingActionReason::Halted(TradingHaltReason::from_bytes(&self.reason))
+            }
+            TradingState::Paused => {
+                TradingActionReason::Paused(TradingHaltReason::from_bytes(&self.reason))
+            }
+            TradingState::QuotationOnly => TradingActionReason::QuotationOnly(
+                TradingResumptionReason::from_bytes(&self.reason),
+            ),
+            TradingState::Trading => {
+                TradingActionReason::Trading(TradingResumptionReason::from_bytes(&self.reason))
+            }
+            TradingState::Unknown(ident) => TradingActionReason::Unknown {
+                state: ident,
+                reason_bytes: self.reason,
+            },
+        }
     }
 }
 
@@ -2520,6 +2537,252 @@ impl From<u8> for OpenEligibilityStatus {
     #[inline]
     fn from(value: u8) -> Self {
         Self::from_byte(value)
+    }
+}
+
+/// Idiomatic representation combining the trading state and its contextual reason.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TradingActionReason {
+    /// 'H' - Halted across all U.S. equity markets
+    Halted(TradingHaltReason),
+    /// 'P' - Paused across all U.S. equity markets
+    Paused(TradingHaltReason),
+    /// 'Q' - Quotation only period for cross-market resumption
+    QuotationOnly(TradingResumptionReason),
+    /// 'T' - Trading on Nasdaq
+    Trading(TradingResumptionReason),
+    /// Fallback for unrecognized states
+    Unknown { state: u8, reason_bytes: [u8; 4] },
+}
+
+/// A 4-byte space-padded ASCII reason code from a Trading Action message.
+///
+/// The raw bytes are stored as-is from the wire. Use [`TradingHaltReason::decode`]
+/// to obtain the typed [`TradingHaltReasonCode`] variant.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TradingHaltReason {
+    /// T1 — Halt News Pending
+    HaltNewsPending,
+    /// T2 — Halt News Disseminated
+    HaltNewsDisseminated,
+    /// T5 — Single Security Trading Pause In Effect
+    SingleSecurityTradingPause,
+    /// T6 — Regulatory Halt: Extraordinary Market Activity
+    RegulatoryHaltExtraordinaryMarketActivity,
+    /// T8 — Halt ETF
+    HaltEtf,
+    /// T12 — Trading Halted; For Information Requested by Listing Market
+    HaltInformationRequestedByListingMarket,
+    /// H4 — Halt Non-Compliance
+    HaltNonCompliance,
+    /// H9 — Halt Filings Not Current
+    HaltFilingsNotCurrent,
+    /// H10 — Halt SEC Trading Suspension
+    HaltSecTradingSuspension,
+    /// H11 — Halt Regulatory Concern
+    HaltRegulatoryConcern,
+    /// O1 — Operations Halt; Contact Market Operations
+    OperationsHalt,
+    /// LUDP — Volatility Trading Pause
+    VolatilityTradingPause,
+    /// LUDS — Volatility Trading Pause: Straddle Condition
+    VolatilityTradingPauseStraddleCondition,
+    /// MWC1 — Market Wide Circuit Breaker Halt – Level 1
+    MarketWideCircuitBreakerLevel1,
+    /// MWC2 — Market Wide Circuit Breaker Halt – Level 2
+    MarketWideCircuitBreakerLevel2,
+    /// MWC3 — Market Wide Circuit Breaker Halt – Level 3
+    MarketWideCircuitBreakerLevel3,
+    /// MWC0 — Market Wide Circuit Breaker Halt – Carry over from previous day
+    MarketWideCircuitBreakerCarryOver,
+    /// IPO1 — IPO Issue Not Yet Trading
+    IpoNotYetTrading,
+    /// M1 — Corporate Action
+    CorporateAction,
+    /// M2 — Quotation Not Available
+    QuotationNotAvailable,
+    /// `    ` (four spaces) — Reason Not Available
+    ReasonNotAvailable,
+    /// Unrecognised code; raw bytes preserved for diagnostics.
+    Unknown([u8; 4]),
+}
+
+impl TradingHaltReason {
+    #[inline]
+    pub const fn from_bytes(value: &[u8; 4]) -> Self {
+        match value {
+            b"T1  " => TradingHaltReason::HaltNewsPending,
+            b"T2  " => TradingHaltReason::HaltNewsDisseminated,
+            b"T5  " => TradingHaltReason::SingleSecurityTradingPause,
+            b"T6  " => TradingHaltReason::RegulatoryHaltExtraordinaryMarketActivity,
+            b"T8  " => TradingHaltReason::HaltEtf,
+            b"T12 " => TradingHaltReason::HaltInformationRequestedByListingMarket,
+            b"H4  " => TradingHaltReason::HaltNonCompliance,
+            b"H9  " => TradingHaltReason::HaltFilingsNotCurrent,
+            b"H10 " => TradingHaltReason::HaltSecTradingSuspension,
+            b"H11 " => TradingHaltReason::HaltRegulatoryConcern,
+            b"O1  " => TradingHaltReason::OperationsHalt,
+            b"LUDP" => TradingHaltReason::VolatilityTradingPause,
+            b"LUDS" => TradingHaltReason::VolatilityTradingPauseStraddleCondition,
+            b"MWC1" => TradingHaltReason::MarketWideCircuitBreakerLevel1,
+            b"MWC2" => TradingHaltReason::MarketWideCircuitBreakerLevel2,
+            b"MWC3" => TradingHaltReason::MarketWideCircuitBreakerLevel3,
+            b"MWC0" => TradingHaltReason::MarketWideCircuitBreakerCarryOver,
+            b"IPO1" => TradingHaltReason::IpoNotYetTrading,
+            b"M1  " => TradingHaltReason::CorporateAction,
+            b"M2  " => TradingHaltReason::QuotationNotAvailable,
+            b"    " => TradingHaltReason::ReasonNotAvailable,
+            _ => TradingHaltReason::Unknown(*value),
+        }
+    }
+}
+
+impl std::fmt::Display for TradingHaltReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::HaltNewsPending => "T1   – Halt News Pending",
+            Self::HaltNewsDisseminated => "T2   – Halt News Disseminated",
+            Self::SingleSecurityTradingPause => "T5   – Single Security Trading Pause In Effect",
+            Self::RegulatoryHaltExtraordinaryMarketActivity => {
+                "T6   – Regulatory Halt: Extraordinary Market Activity"
+            }
+            Self::HaltEtf => "T8   – Halt ETF",
+            Self::HaltInformationRequestedByListingMarket => {
+                "T12  – Trading Halted; For Information Requested by Listing Market"
+            }
+            Self::HaltNonCompliance => "H4   – Halt Non-Compliance",
+            Self::HaltFilingsNotCurrent => "H9   – Halt Filings Not Current",
+            Self::HaltSecTradingSuspension => "H10  – Halt SEC Trading Suspension",
+            Self::HaltRegulatoryConcern => "H11  – Halt Regulatory Concern",
+            Self::OperationsHalt => "O1   – Operations Halt; Contact Market Operations",
+            Self::VolatilityTradingPause => "LUDP – Volatility Trading Pause",
+            Self::VolatilityTradingPauseStraddleCondition => {
+                "LUDS – Volatility Trading Pause: Straddle Condition"
+            }
+            Self::MarketWideCircuitBreakerLevel1 => {
+                "MWC1 – Market Wide Circuit Breaker Halt – Level 1"
+            }
+            Self::MarketWideCircuitBreakerLevel2 => {
+                "MWC2 – Market Wide Circuit Breaker Halt – Level 2"
+            }
+            Self::MarketWideCircuitBreakerLevel3 => {
+                "MWC3 – Market Wide Circuit Breaker Halt – Level 3"
+            }
+            Self::MarketWideCircuitBreakerCarryOver => {
+                "MWC0 – Market Wide Circuit Breaker Halt – Carry over from previous day"
+            }
+            Self::IpoNotYetTrading => "IPO1 – IPO Issue Not Yet Trading",
+            Self::CorporateAction => "M1   – Corporate Action",
+            Self::QuotationNotAvailable => "M2   – Quotation Not Available",
+            Self::ReasonNotAvailable => "     – Reason Not Available",
+            Self::Unknown(b) => {
+                return write!(f, "Unknown({:?})", core::str::from_utf8(b).unwrap_or("?"));
+            }
+        };
+        f.write_str(s)
+    }
+}
+
+/// A 4-byte space-padded ASCII reason code from a Quotation/Trading Resumption Action message.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TradingResumptionReason {
+    /// T3 — News and Resumption Times
+    NewsAndResumptionTimes,
+    /// T7 — Single Security Trading Pause / Quotation Only Period
+    SingleSecurityTradingPause,
+    /// R4 — Qualifications Issues Reviewed/Resolved; Quotations/Trading to Resume
+    QualificationsIssuesResolved,
+    /// R9 — Filing Requirements Satisfied/Resolved; Quotations/Trading To Resume
+    FilingRequirementsSatisfied,
+    /// C3 — Issuer News Not Forthcoming; Quotations/Trading To Resume
+    IssuerNewsNotForthcoming,
+    /// C4 — Qualifications Halt ended Maintenance Requirements Met; Resume
+    QualificationsHaltEnded,
+    /// C9 — Qualifications Halt Concluded; Filings Met; Quotes/Trades To Resume
+    QualificationsHaltConcluded,
+    /// C11 — Trade Halt Concluded By Other Regulatory Auth.; Quotes/Trades Resume
+    TradeHaltConcludedByOtherRegulatoryAuth,
+    /// MWCQ — Market Wide Circuit Breaker Resumption
+    MarketWideCircuitBreakerResumption,
+    /// R1 — New Issue Available
+    NewIssueAvailable,
+    /// R2 — Issue Available
+    IssueAvailable,
+    /// IPOQ — IPO Security Released for Quotation (Nasdaq Securities Only)
+    IpoSecurityReleasedForQuotation,
+    /// IPOE — IPO Security — Positioning Window Extension (Nasdaq Securities Only)
+    IpoSecurityPositioningWindowExtension,
+    /// `    ` (four spaces) — Reason Not Available
+    ReasonNotAvailable,
+    /// Unrecognised code; raw bytes preserved for diagnostics.
+    Unknown([u8; 4]),
+}
+
+impl TradingResumptionReason {
+    #[inline]
+    pub const fn from_bytes(value: &[u8; 4]) -> Self {
+        match value {
+            b"T3  " => TradingResumptionReason::NewsAndResumptionTimes,
+            b"T7  " => TradingResumptionReason::SingleSecurityTradingPause,
+            b"R4  " => TradingResumptionReason::QualificationsIssuesResolved,
+            b"R9  " => TradingResumptionReason::FilingRequirementsSatisfied,
+            b"C3  " => TradingResumptionReason::IssuerNewsNotForthcoming,
+            b"C4  " => TradingResumptionReason::QualificationsHaltEnded,
+            b"C9  " => TradingResumptionReason::QualificationsHaltConcluded,
+            b"C11 " => TradingResumptionReason::TradeHaltConcludedByOtherRegulatoryAuth,
+            b"MWCQ" => TradingResumptionReason::MarketWideCircuitBreakerResumption,
+            b"R1  " => TradingResumptionReason::NewIssueAvailable,
+            b"R2  " => TradingResumptionReason::IssueAvailable,
+            b"IPOQ" => TradingResumptionReason::IpoSecurityReleasedForQuotation,
+            b"IPOE" => TradingResumptionReason::IpoSecurityPositioningWindowExtension,
+            b"    " => TradingResumptionReason::ReasonNotAvailable,
+            _ => TradingResumptionReason::Unknown(*value),
+        }
+    }
+}
+
+impl std::fmt::Display for TradingResumptionReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::NewsAndResumptionTimes => "T3   – News and Resumption Times",
+            Self::SingleSecurityTradingPause => {
+                "T7   – Single Security Trading Pause / Quotation Only Period"
+            }
+            Self::QualificationsIssuesResolved => {
+                "R4   – Qualifications Issues Reviewed/Resolved; Quotations/Trading to Resume"
+            }
+            Self::FilingRequirementsSatisfied => {
+                "R9   – Filing Requirements Satisfied/Resolved; Quotations/Trading To Resume"
+            }
+            Self::IssuerNewsNotForthcoming => {
+                "C3   – Issuer News Not Forthcoming; Quotations/Trading To Resume"
+            }
+            Self::QualificationsHaltEnded => {
+                "C4   – Qualifications Halt ended Maintenance Requirements Met; Resume"
+            }
+            Self::QualificationsHaltConcluded => {
+                "C9   – Qualifications Halt Concluded; Filings Met; Quotes/Trades To Resume"
+            }
+            Self::TradeHaltConcludedByOtherRegulatoryAuth => {
+                "C11  – Trade Halt Concluded By Other Regulatory Auth.; Quotes/Trades Resume"
+            }
+            Self::MarketWideCircuitBreakerResumption => {
+                "MWCQ – Market Wide Circuit Breaker Resumption"
+            }
+            Self::NewIssueAvailable => "R1   – New Issue Available",
+            Self::IssueAvailable => "R2   – Issue Available",
+            Self::IpoSecurityReleasedForQuotation => {
+                "IPOQ – IPO Security Released for Quotation (Nasdaq Securities Only)"
+            }
+            Self::IpoSecurityPositioningWindowExtension => {
+                "IPOE – IPO Security — Positioning Window Extension (Nasdaq Securities Only)"
+            }
+            Self::ReasonNotAvailable => "     – Reason Not Available",
+            Self::Unknown(b) => {
+                return write!(f, "Unknown({:?})", core::str::from_utf8(b).unwrap_or("?"));
+            }
+        };
+        f.write_str(s)
     }
 }
 
