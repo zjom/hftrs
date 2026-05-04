@@ -550,7 +550,7 @@ impl itch5::MessageHandler for MessageHandler {
              price={} qty={} ts={} locate={locate}",
             msg.price().into_i64(),
             msg.shares(),
-            msg.timestamp(),
+            msg.timestamp().to_naive_time(),
         );
 
         match book.add(Order {
@@ -558,7 +558,7 @@ impl itch5::MessageHandler for MessageHandler {
             side,
             price: msg.price().into_i64(),
             qty: msg.shares() as u64,
-            ts: msg.timestamp(),
+            ts: msg.timestamp().to_u64(),
         }) {
             Ok(()) => self.stats.orders_added += 1,
             Err(e) => log::error!(
@@ -598,7 +598,7 @@ impl itch5::MessageHandler for MessageHandler {
              price={} qty={} ts={} locate={locate}",
             msg.price().into_i64(),
             msg.shares(),
-            msg.timestamp(),
+            msg.timestamp().to_naive_time(),
         );
 
         match book.add(Order {
@@ -606,7 +606,7 @@ impl itch5::MessageHandler for MessageHandler {
             side,
             price: msg.price().into_i64(),
             qty: msg.shares() as u64,
-            ts: msg.timestamp(),
+            ts: msg.timestamp().to_u64(),
         }) {
             Ok(()) => self.stats.orders_added += 1,
             Err(e) => log::error!(
@@ -630,10 +630,14 @@ impl itch5::MessageHandler for MessageHandler {
         log::debug!(
             "order_executed: order_ref={order_ref} shares={} ts={} locate={locate}",
             msg.executed_shares(),
-            msg.timestamp(),
+            msg.timestamp().to_naive_time(),
         );
 
-        match book.execute(order_ref, msg.executed_shares() as u64, msg.timestamp()) {
+        match book.execute(
+            order_ref,
+            msg.executed_shares() as u64,
+            msg.timestamp().to_u64(),
+        ) {
             Ok(_) => {
                 self.stats.orders_executed += 1;
             }
@@ -658,14 +662,14 @@ impl itch5::MessageHandler for MessageHandler {
             "order_executed_with_price: order_ref={order_ref} shares={} price={} ts={} locate={locate}",
             msg.executed_shares(),
             msg.execution_price().into_i64(),
-            msg.timestamp(),
+            msg.timestamp().to_naive_time(),
         );
 
         match book.execute_at(
             order_ref,
             msg.executed_shares() as u64,
             msg.execution_price().into_i64(),
-            msg.timestamp(),
+            msg.timestamp().to_u64(),
         ) {
             Ok(_) => {
                 self.stats.orders_executed += 1;
@@ -742,7 +746,7 @@ impl itch5::MessageHandler for MessageHandler {
              price={} shares={} ts={} locate={locate}",
             msg.price().into_i64(),
             msg.shares(),
-            msg.timestamp(),
+            msg.timestamp().to_naive_time(),
         );
 
         match book.replace(
@@ -750,7 +754,7 @@ impl itch5::MessageHandler for MessageHandler {
             new_order_ref,
             msg.price().into_i64(),
             msg.shares() as u64,
-            msg.timestamp(),
+            msg.timestamp().to_u64(),
         ) {
             Ok(()) => self.stats.orders_replaced += 1,
             Err(e) => log::error!(
