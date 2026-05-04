@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned,
     network_endian::{U16, U32, U64},
@@ -50,29 +48,36 @@ impl Price8 {
     }
 }
 
+/// Symbol is a container of a stock's symbol. e.g., AAPL, TSLA, MSFT etc
+///
+/// Ticker symbols are fixed width (8) uppercased ASCII arrays, right padded with `b' '`.
 #[derive(
     FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug, Copy, Clone, PartialEq,
 )]
 #[repr(transparent)]
 pub struct Symbol([u8; 8]);
 impl Symbol {
+    /// Converts bytes of symbol to u64, big endian.
     #[inline]
-    pub const fn hash(&self) -> u64 {
+    pub const fn to_u64(&self) -> u64 {
         u64::from_be_bytes(self.0)
     }
 
+    /// Converts u64 to [`Symbol`], big endian.
     #[inline]
-    pub const fn from_hash(hash: u64) -> Symbol {
+    pub const fn from_u64(hash: u64) -> Symbol {
         Symbol(hash.to_be_bytes())
     }
 
+    /// Returns str representation of symbol or `"unknown"` if invalid utf-8
+    /// Useful for debugging.
     #[inline]
     pub fn as_str(&self) -> &str {
         str::from_utf8(&self.0).unwrap_or("unknown")
     }
 }
 
-impl FromStr for Symbol {
+impl std::str::FromStr for Symbol {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() == 0 {
@@ -1987,7 +1992,7 @@ mod tests {
         let input = "aapl";
         let s: Symbol = input.parse().expect("should not panic");
 
-        assert_eq!(Symbol::from_hash(s.hash()), s)
+        assert_eq!(Symbol::from_u64(s.to_u64()), s)
     }
 
     /// ITCH5 wire format right-pads symbols with ASCII spaces. `from_str` must
@@ -2003,7 +2008,7 @@ mod tests {
     fn from_str_hash_matches_wire_symbol() {
         let from_user: Symbol = "AAPL".parse().unwrap();
         let from_wire = Symbol(*b"AAPL    ");
-        assert_eq!(from_user.hash(), from_wire.hash());
+        assert_eq!(from_user.to_u64(), from_wire.to_u64());
         assert_eq!(from_user, from_wire);
     }
 
@@ -2011,7 +2016,7 @@ mod tests {
     fn from_str_uppercases() {
         let lower: Symbol = "aapl".parse().unwrap();
         let upper: Symbol = "AAPL".parse().unwrap();
-        assert_eq!(lower.hash(), upper.hash());
+        assert_eq!(lower.to_u64(), upper.to_u64());
     }
 
     #[test]
