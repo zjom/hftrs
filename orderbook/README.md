@@ -59,16 +59,32 @@ Trade-only messages (`P`), system events (`S`), and the various status messages 
 ## Benchmarks
 
 ```sh
-cargo bench
+taskset -c 3 cargo bench -p orderbook
 ```
 
-The bench profile inherits release optimizations (`lto = "fat"`, single codegen unit) but keeps debug symbols so you can attach `perf`. For stable numbers, pin to an isolated core:
+The bench profile inherits release optimizations (`lto = "fat"`, single codegen unit) but keeps debug symbols so you can attach `perf`. The suite ([`benches/book_bench.rs`](benches/book_bench.rs)) is divided into four groups:
 
-```sh
-taskset -c 3 cargo bench
-```
-
-The current suite covers `add`, `best_bid + best_ask`, `cancel + re-add` (exercises the slab free list), and partial executes at the top of book. Numbers go in this README once the workload is dialled in.
+- **`orderbook/single_op_latency/{add,delete,execute_partial,
+  execute_full,cancel_partial,replace}`** — nanosecond-resolution
+  per-op latency against a pre-warmed 50k-order book. Uses
+  `iter_custom` to amortize Criterion's per-iteration overhead across
+  1000 ops per measurement window. This is the number that matters
+  on the hot path.
+- **`orderbook/query_scaling/{best_bid,best_ask,spread,mid,depth_10}`
+  × {1k,10k,100k,1M}** — top-of-book and depth(10) queries against
+  pre-built books at four orders of magnitude. Confirms that query
+  cost is bounded by the BTreeMap traversal and doesn't grow
+  linearly with order count.
+- **`orderbook/bulk/{fresh_inserts_10k,delete_then_readd_10k,
+  fragmented_refill_5k}`** — bulk workloads. The fragmented variant
+  pre-deletes every other order before timing the refill so the slab
+  free list is exercised under real churn rather than fresh growth.
+- **`orderbook/itch_replay/registry_replay_full_file`** — drives a
+  registry of order books off the recorded ITCH sample
+  (`../data/itch_1000_000` by default; override with
+  `ITCH5_BENCH_FILE=...`). Throughput is reported in *book events*
+  (add + execute + cancel + delete + replace), not parsed messages,
+  so the number isn't inflated by trades and status records.
 
 ## Tests
 
