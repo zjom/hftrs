@@ -107,7 +107,7 @@ pub use client::{Datagram, MoldUDP64, RetransmissionPacket, RetransmissionReques
 pub use errors::MoldUdpError;
 pub use packet::*;
 mod server;
-pub use server::{MoldUDP64Server, ServerHandle};
+pub use server::{MoldUDP64Server, RawPacket, ServerHandle, build_packet};
 mod util;
 
 pub use zerocopy::FromBytes;

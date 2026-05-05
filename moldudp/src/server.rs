@@ -268,7 +268,7 @@ impl MoldUDP64Server {
     }
 }
 
-fn build_packet(session: &[u8; 10], seq_num: u64, msgs: &[Vec<u8>]) -> Vec<u8> {
+pub fn build_packet(session: &[u8; 10], seq_num: u64, msgs: &[Vec<u8>]) -> Vec<u8> {
     let total: usize = HEADER_LEN + msgs.iter().map(|m| 2 + m.len()).sum::<usize>();
     let mut buf = Vec::with_capacity(total);
     buf.extend_from_slice(session);
