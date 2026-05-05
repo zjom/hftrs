@@ -87,6 +87,9 @@ impl VecRegistry {
 }
 
 impl Registry for VecRegistry {
+    fn with_capacity(cap: usize) -> Self {
+        Self::with_capacity(cap)
+    }
     fn get_symbol(&self, locate: u16) -> Option<&Symbol> {
         self.get_symbol(locate)
     }
