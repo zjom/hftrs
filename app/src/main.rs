@@ -6,7 +6,7 @@ use moldudp::{
     FromBytes, MoldUDP64, MoldUDP64Server, Packet, PacketKind, RetransmissionPacket,
     RetransmissionRequest, ServerHandle,
 };
-use orderbook::registry::HashMapRegistry;
+use orderbook::registry::{Registry, VecRegistry};
 use orderbook::{Order, Side};
 use std::collections::HashSet;
 use std::fs::File;
@@ -190,12 +190,12 @@ fn main() -> Result<()> {
                 .collect()
         });
 
-        thread::spawn(move || -> MessageHandler {
+        thread::spawn(move || -> MessageHandler<VecRegistry> {
             log::info!("client thread started");
             let client_start = Instant::now();
 
             let mut handler = match symbols_to_watch {
-                Some(ss) => MessageHandler::with_symbols(ss),
+                Some(ss) => MessageHandler::<VecRegistry>::with_symbols(ss),
                 None => MessageHandler::new(),
             };
 
@@ -471,32 +471,46 @@ struct HandlerStats {
     skipped_locate: u64,
 }
 
-struct MessageHandler {
-    registry: HashMapRegistry,
+struct MessageHandler<R: Registry> {
+    registry: R,
     symbols_to_watch: Option<HashSet<u64>>,
     stats: HandlerStats,
 }
 
-impl MessageHandler {
-    fn new() -> MessageHandler {
+impl<R: Registry> MessageHandler<R> {
+    fn new() -> MessageHandler<R> {
         log::debug!("creating MessageHandler for all symbols");
         MessageHandler {
-            registry: HashMapRegistry::with_capacity(1 << 16 + 1),
+            registry: R::new(),
             symbols_to_watch: None,
             stats: HandlerStats::default(),
         }
     }
-    fn with_symbols(symbols: Vec<Symbol>) -> MessageHandler {
+}
+
+impl MessageHandler<VecRegistry> {
+    fn with_symbols(symbols: Vec<Symbol>) -> MessageHandler<VecRegistry> {
         log::debug!("creating MessageHandler for {} symbol(s)", symbols.len());
         MessageHandler {
-            registry: HashMapRegistry::with_capacity(symbols.len()),
+            registry: VecRegistry::new(),
             symbols_to_watch: Some(symbols.iter().map(|s| s.to_u64()).collect()),
             stats: HandlerStats::default(),
         }
     }
 }
 
-impl itch5::MessageHandler for MessageHandler {
+// impl MessageHandler<HashMapRegistry> {
+//     fn with_symbols(symbols: Vec<Symbol>) -> MessageHandler<HashMapRegistry> {
+//         log::debug!("creating MessageHandler for {} symbol(s)", symbols.len());
+//         MessageHandler {
+//             registry: HashMapRegistry::with_capacity(symbols.len()),
+//             symbols_to_watch: Some(symbols.iter().map(|s| s.to_u64()).collect()),
+//             stats: HandlerStats::default(),
+//         }
+//     }
+// }
+
+impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     fn on_stock_directory(&mut self, msg: &StockDirectory) -> ControlFlow<()> {
         self.stats.stock_directory_msgs += 1;
         let stock = msg.stock();
@@ -769,7 +783,10 @@ impl itch5::MessageHandler for MessageHandler {
 
 // ── Report ─────────────────────────────────────────────────────────────────
 
-fn write_report(handler: &MessageHandler, mut writer: impl io::Write) -> io::Result<()> {
+fn write_report<R: Registry>(
+    handler: &MessageHandler<R>,
+    mut writer: impl io::Write,
+) -> io::Result<()> {
     let book_count = handler.registry.iter().count();
     log::info!(
         "writing report: {} book(s) | stats: stock_dirs={} added={} executed={} \
