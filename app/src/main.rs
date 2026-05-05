@@ -3,8 +3,8 @@ use clap::Parser;
 use itch5::messages::*;
 use memmap2::Mmap;
 use moldudp::{
-    FromBytes, MoldUDP64, MoldUDP64Server, Packet, PacketKind, RetransmissionPacket,
-    RetransmissionRequest, ServerHandle,
+    Datagram, FromBytes, MoldUDP64, MoldUDP64Server, Packet, PacketKind, Receiver,
+    RetransmissionPacket, RetransmissionRequest, Sender, ServerHandle,
 };
 use orderbook::registry::{Registry, VecRegistry};
 use orderbook::{Order, Side};
@@ -192,126 +192,7 @@ fn main() -> Result<()> {
 
         thread::spawn(move || -> MessageHandler<VecRegistry> {
             log::info!("client thread started");
-            let client_start = Instant::now();
-
-            let mut handler = match symbols_to_watch {
-                Some(ss) => MessageHandler::<VecRegistry>::with_symbols(ss),
-                None => MessageHandler::new(),
-            };
-
-            // Per-run counters.
-            let mut packets_received: u64 = 0;
-            let mut heartbeats: u64 = 0;
-            let mut retransmission_requests: u64 = 0;
-            let mut parse_errors: u64 = 0;
-            let mut truncated_packets: u64 = 0;
-
-            while let Ok(datagram) = rx.recv() {
-                if shutdown.load(Ordering::Relaxed) {
-                    log::info!(
-                        "client shutdown requested after {} packets ({} heartbeats, {} rereqs)",
-                        packets_received,
-                        heartbeats,
-                        retransmission_requests,
-                    );
-                    break;
-                }
-
-                let packet = Packet::ref_from_bytes(datagram.bytes()).unwrap();
-                let msg_count = packet.msg_count();
-                let seq_num = packet.seq_num();
-
-                match packet.packet_kind() {
-                    PacketKind::Heartbeat => {
-                        heartbeats += 1;
-                        log::trace!("heartbeat (total={})", heartbeats);
-                        continue;
-                    }
-                    PacketKind::EndOfSession => {
-                        log::info!("end-of-session packet received at seq={}", seq_num);
-                        break;
-                    }
-                    _ => {}
-                }
-
-                packets_received += 1;
-                log::debug!(
-                    "packet received: seq={} msg_count={} (total_packets={})",
-                    seq_num,
-                    msg_count,
-                    packets_received,
-                );
-
-                // Integrity check: does the payload actually contain the
-                // advertised number of messages?
-                let actual_msg_count = packet.iter().len();
-                if actual_msg_count != msg_count.into() {
-                    truncated_packets += 1;
-                    log::warn!(
-                        "truncated packet at seq={}: advertised {} messages but found {} \
-                         (total truncated={}); sending retransmission request",
-                        seq_num,
-                        msg_count,
-                        actual_msg_count,
-                        truncated_packets,
-                    );
-                    let rereq = RetransmissionPacket {
-                        msg_count: msg_count.into(),
-                        seq_num: seq_num.into(),
-                        session: *packet.session_ident_raw(),
-                    };
-                    match req_tx.try_send(RetransmissionRequest::new(rereq)) {
-                        Ok(()) => {
-                            retransmission_requests += 1;
-                            log::debug!(
-                                "retransmission request sent for seq={} (total_rereqs={})",
-                                seq_num,
-                                retransmission_requests,
-                            );
-                        }
-                        Err(e) => log::error!(
-                            "failed to enqueue retransmission request for seq={}: {e}",
-                            seq_num
-                        ),
-                    }
-                }
-
-                log::trace!(
-                    "parsing {} message(s) from seq={}",
-                    actual_msg_count,
-                    seq_num
-                );
-                if let Err(e) = itch5::Parser::new(&packet.messages).parse_stream(&mut handler) {
-                    parse_errors += 1;
-                    log::error!(
-                        "parse error in packet seq={} (total_parse_errors={}): {e}",
-                        seq_num,
-                        parse_errors,
-                    );
-                    continue;
-                }
-            }
-
-            let elapsed = client_start.elapsed();
-            log::info!(
-                "client thread done in {:.2?}: packets={} heartbeats={} rereqs={} \
-                 truncated={} parse_errors={} | orders_added={} executed={} cancelled={} \
-                 deleted={} replaced={} registered_symbols={}",
-                elapsed,
-                packets_received,
-                heartbeats,
-                retransmission_requests,
-                truncated_packets,
-                parse_errors,
-                handler.stats.orders_added,
-                handler.stats.orders_executed,
-                handler.stats.orders_cancelled,
-                handler.stats.orders_deleted,
-                handler.stats.orders_replaced,
-                handler.registry.len(),
-            );
-
-            handler
+            start_handler(symbols_to_watch, rx, req_tx, shutdown)
         })
     };
 
@@ -414,7 +295,7 @@ fn serve(
         }
 
         if batch.len() >= next_flush {
-            log::debug!(
+            log::trace!(
                 "flushing batch of {} message(s) (flush #{})",
                 batch.len(),
                 flush_count + 1,
@@ -428,7 +309,7 @@ fn serve(
 
     // Flush remainder.
     if !batch.is_empty() {
-        log::debug!("flushing final batch of {} message(s)", batch.len());
+        log::trace!("flushing final batch of {} message(s)", batch.len());
         sent += flush(handle, &mut batch)?;
         flush_count += 1;
         log::debug!("final flush done (flush #{flush_count})");
@@ -457,6 +338,133 @@ fn flush(handle: &ServerHandle, batch: &mut Vec<Vec<u8>>) -> Result<u64> {
 }
 
 // ── Message handler ────────────────────────────────────────────────────────
+fn start_handler(
+    symbols_to_watch: Option<Vec<Symbol>>,
+    rx: Receiver<Datagram>,
+    req_tx: Sender<RetransmissionRequest>,
+    shutdown: Arc<AtomicBool>,
+) -> MessageHandler<VecRegistry> {
+    let client_start = Instant::now();
+
+    let mut handler = match symbols_to_watch {
+        Some(ss) => MessageHandler::<VecRegistry>::with_symbols(ss, Arc::clone(&shutdown)),
+        None => MessageHandler::new(Arc::clone(&shutdown)),
+    };
+
+    // Per-run counters.
+    let mut packets_received: u64 = 0;
+    let mut heartbeats: u64 = 0;
+    let mut retransmission_requests: u64 = 0;
+    let mut parse_errors: u64 = 0;
+    let mut truncated_packets: u64 = 0;
+
+    while let Ok(datagram) = rx.recv_timeout(Duration::from_secs(5)) {
+        if shutdown.load(Ordering::Relaxed) {
+            log::info!(
+                "client shutdown requested after {} packets ({} heartbeats, {} rereqs)",
+                packets_received,
+                heartbeats,
+                retransmission_requests,
+            );
+            break;
+        }
+
+        let packet = Packet::ref_from_bytes(datagram.bytes()).unwrap();
+        let msg_count = packet.msg_count();
+        let seq_num = packet.seq_num();
+
+        match packet.packet_kind() {
+            PacketKind::Heartbeat => {
+                heartbeats += 1;
+                log::trace!("heartbeat (total={})", heartbeats);
+                continue;
+            }
+            PacketKind::EndOfSession => {
+                log::info!("end-of-session packet received at seq={}", seq_num);
+                break;
+            }
+            _ => {}
+        }
+
+        packets_received += 1;
+        log::debug!(
+            "packet received: seq={} msg_count={} (total_packets={})",
+            seq_num,
+            msg_count,
+            packets_received,
+        );
+
+        // Integrity check: does the payload actually contain the
+        // advertised number of messages?
+        let actual_msg_count = packet.iter().len();
+        if actual_msg_count != msg_count as usize {
+            truncated_packets += 1;
+            log::warn!(
+                "truncated packet at seq={}: advertised {} messages but found {} \
+                         (total truncated={}); sending retransmission request",
+                seq_num,
+                msg_count,
+                actual_msg_count,
+                truncated_packets,
+            );
+            let rereq = RetransmissionPacket {
+                msg_count: msg_count.into(),
+                seq_num: seq_num.into(),
+                session: *packet.session_ident_raw(),
+            };
+            match req_tx.try_send(RetransmissionRequest::new(rereq)) {
+                Ok(()) => {
+                    retransmission_requests += 1;
+                    log::debug!(
+                        "retransmission request sent for seq={} (total_rereqs={})",
+                        seq_num,
+                        retransmission_requests,
+                    );
+                }
+                Err(e) => log::error!(
+                    "failed to enqueue retransmission request for seq={}: {e}",
+                    seq_num
+                ),
+            }
+        }
+
+        log::trace!(
+            "parsing {} message(s) from seq={}",
+            actual_msg_count,
+            seq_num
+        );
+        if let Err(e) = itch5::Parser::new(&packet.messages).parse_stream(&mut handler) {
+            parse_errors += 1;
+            log::error!(
+                "parse error in packet seq={} (total_parse_errors={}): {e}",
+                seq_num,
+                parse_errors,
+            );
+            continue;
+        }
+    }
+
+    let elapsed = client_start.elapsed();
+    log::info!(
+        "client thread done in {:.2?}: packets={} heartbeats={} rereqs={} \
+                 truncated={} parse_errors={} | orders_added={} executed={} cancelled={} \
+                 deleted={} replaced={} registered_symbols={}",
+        elapsed,
+        packets_received,
+        heartbeats,
+        retransmission_requests,
+        truncated_packets,
+        parse_errors,
+        handler.stats.orders_added,
+        handler.stats.orders_executed,
+        handler.stats.orders_cancelled,
+        handler.stats.orders_deleted,
+        handler.stats.orders_replaced,
+        handler.registry.len(),
+    );
+
+    handler
+}
 
 /// Running totals for the client session, used in the final summary log line.
 #[derive(Default)]
@@ -475,26 +483,45 @@ struct MessageHandler<R: Registry> {
     registry: R,
     symbols_to_watch: Option<HashSet<u64>>,
     stats: HandlerStats,
+    shutdown: Arc<AtomicBool>,
+    tick: u32,
 }
 
 impl<R: Registry> MessageHandler<R> {
-    fn new() -> MessageHandler<R> {
+    fn new(shutdown: Arc<AtomicBool>) -> MessageHandler<R> {
         log::debug!("creating MessageHandler for all symbols");
         MessageHandler {
             registry: R::new(),
             symbols_to_watch: None,
             stats: HandlerStats::default(),
+            shutdown: shutdown,
+            tick: 0,
+        }
+    }
+
+    #[inline]
+    fn should_stop(&mut self) -> ControlFlow<()> {
+        self.tick = self.tick.wrapping_add(1);
+        if self.tick & 0xFF == 0 && self.shutdown.load(Ordering::Relaxed) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
     }
 }
 
 impl MessageHandler<VecRegistry> {
-    fn with_symbols(symbols: Vec<Symbol>) -> MessageHandler<VecRegistry> {
+    fn with_symbols(
+        symbols: Vec<Symbol>,
+        shutdown: Arc<AtomicBool>,
+    ) -> MessageHandler<VecRegistry> {
         log::debug!("creating MessageHandler for {} symbol(s)", symbols.len());
         MessageHandler {
             registry: VecRegistry::new(),
             symbols_to_watch: Some(symbols.iter().map(|s| s.to_u64()).collect()),
             stats: HandlerStats::default(),
+            shutdown: shutdown,
+            tick: 0,
         }
     }
 }
@@ -512,6 +539,7 @@ impl MessageHandler<VecRegistry> {
 
 impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     fn on_stock_directory(&mut self, msg: &StockDirectory) -> ControlFlow<()> {
+        self.should_stop()?;
         self.stats.stock_directory_msgs += 1;
         let stock = msg.stock();
         if self
@@ -539,6 +567,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
         &mut self,
         msg: &AddOrderNoMPIDAttribution,
     ) -> ControlFlow<()> {
+        self.should_stop()?;
         let locate = msg.stock_locate();
         let Some(book) = self.registry.get_mut(locate) else {
             self.stats.skipped_locate += 1;
@@ -587,6 +616,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
         &mut self,
         msg: &AddOrderWithMPIDAttribution,
     ) -> ControlFlow<()> {
+        self.should_stop()?;
         let locate = msg.stock_locate();
         let Some(book) = self.registry.get_mut(locate) else {
             self.stats.skipped_locate += 1;
@@ -632,6 +662,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     }
 
     fn on_order_executed(&mut self, msg: &OrderExecuted) -> ControlFlow<()> {
+        self.should_stop()?;
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -663,6 +694,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     }
 
     fn on_order_executed_with_price(&mut self, msg: &OrderExecutedWithPrice) -> ControlFlow<()> {
+        self.should_stop()?;
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -697,6 +729,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     }
 
     fn on_order_cancel(&mut self, msg: &OrderCancel) -> ControlFlow<()> {
+        self.should_stop()?;
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -721,6 +754,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     }
 
     fn on_order_delete(&mut self, msg: &OrderDelete) -> ControlFlow<()> {
+        self.should_stop()?;
         let order_ref = msg.order_reference_number();
         let locate = msg.stock_locate();
 
@@ -742,6 +776,7 @@ impl<R: Registry> itch5::MessageHandler for MessageHandler<R> {
     }
 
     fn on_order_replace(&mut self, msg: &OrderReplace) -> ControlFlow<()> {
+        self.should_stop()?;
         let og_order_ref = msg.original_order_reference_number();
         let locate = msg.stock_locate();
         let new_order_ref = msg.new_order_reference_number();
