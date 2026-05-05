@@ -20,7 +20,7 @@
 //! ## Running
 //!
 //! ```sh
-//! taskset -c 3 cargo bench -p orderbook
+//! cargo bench -p orderbook
 //! ```
 //!
 //! The ITCH replay benchmark looks for `../data/itch_1000_000` by default;
@@ -36,7 +36,7 @@ use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, 
 use memmap2::Mmap;
 
 use itch5::messages::*;
-use orderbook::registry::HashMapRegistry;
+use orderbook::registry::{HashMapRegistry, Registry, VecRegistry};
 use orderbook::{Order, OrderBook, Side};
 
 const HOT_BOOK_SIZE: u64 = 50_000;
@@ -333,8 +333,69 @@ fn bench_bulk(c: &mut Criterion) {
 
 // ─── Realistic ITCH replay through the registry ────────────────────────────
 
-struct ReplayHandler {
-    registry: HashMapRegistry,
+/// End-to-end realistic workload: drive the registry of order books off
+/// the recorded ITCH file. Reports both the wall time per replay and the
+/// effective book-event rate (add + execute + cancel + delete + replace).
+///
+/// Run with each [`Registry`] implementation under the same parameter axis
+/// so criterion plots them side-by-side. The orderbook work is identical
+/// across rows; the delta is purely the `register` / `get_mut` cost of
+/// each registry backing.
+fn bench_itch_replay(c: &mut Criterion) {
+    let Some(mmap) = try_load_sample() else {
+        return;
+    };
+
+    // Pre-count book events so throughput numbers reflect what the book
+    // actually did, not what the parser saw. Counted once via HashMap;
+    // both registries see the same input so the count is identical.
+    let book_events = {
+        let mut h = ReplayHandler::new(HashMapRegistry::new());
+        itch5::Parser::new(&mmap).parse_stream(&mut h).unwrap();
+        h.adds + h.execs + h.cancels + h.deletes + h.replaces
+    };
+
+    let mut g = c.benchmark_group("orderbook/itch_replay");
+    g.throughput(Throughput::Elements(book_events));
+    g.sample_size(20);
+
+    g.bench_function(
+        BenchmarkId::new("registry_replay_full_file", "hashmap"),
+        |b| {
+            b.iter(|| {
+                let mut h = ReplayHandler::new(HashMapRegistry::new());
+                itch5::Parser::new(&mmap).parse_stream(&mut h).unwrap();
+                black_box((
+                    h.adds, h.execs, h.cancels, h.deletes, h.replaces, h.skipped, h.errors,
+                ));
+            });
+        },
+    );
+
+    g.bench_function(BenchmarkId::new("registry_replay_full_file", "vec"), |b| {
+        b.iter(|| {
+            let mut h = ReplayHandler::new(VecRegistry::new());
+            itch5::Parser::new(&mmap).parse_stream(&mut h).unwrap();
+            black_box((
+                h.adds, h.execs, h.cancels, h.deletes, h.replaces, h.skipped, h.errors,
+            ));
+        });
+    });
+    g.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_single_op_latencies,
+    bench_query_scaling,
+    bench_bulk,
+    bench_itch_replay,
+);
+criterion_main!(benches);
+
+// ─── Setup ────────────────────────────
+struct ReplayHandler<R: Registry> {
+    registry: R,
     adds: u64,
     execs: u64,
     cancels: u64,
@@ -344,10 +405,10 @@ struct ReplayHandler {
     errors: u64,
 }
 
-impl ReplayHandler {
-    fn new() -> Self {
+impl<R: Registry> ReplayHandler<R> {
+    fn new(registry: R) -> Self {
         Self {
-            registry: HashMapRegistry::with_capacity(1 << 13),
+            registry,
             adds: 0,
             execs: 0,
             cancels: 0,
@@ -359,7 +420,7 @@ impl ReplayHandler {
     }
 }
 
-impl itch5::MessageHandler for ReplayHandler {
+impl<R: Registry> itch5::MessageHandler for ReplayHandler<R> {
     fn on_stock_directory(&mut self, msg: &StockDirectory) -> ControlFlow<()> {
         self.registry.register(msg.stock_locate(), msg.stock());
         ControlFlow::Continue(())
@@ -510,44 +571,3 @@ impl itch5::MessageHandler for ReplayHandler {
         ControlFlow::Continue(())
     }
 }
-
-/// End-to-end realistic workload: drive the registry of order books off
-/// the recorded ITCH file. Reports both the wall time per replay and the
-/// effective book-event rate (add + execute + cancel + delete + replace).
-fn bench_itch_replay(c: &mut Criterion) {
-    let Some(mmap) = try_load_sample() else {
-        return;
-    };
-
-    // Pre-count book events so throughput numbers reflect what the book
-    // actually did, not what the parser saw.
-    let book_events = {
-        let mut h = ReplayHandler::new();
-        itch5::Parser::new(&mmap).parse_stream(&mut h).unwrap();
-        h.adds + h.execs + h.cancels + h.deletes + h.replaces
-    };
-
-    let mut g = c.benchmark_group("orderbook/itch_replay");
-    g.throughput(Throughput::Elements(book_events));
-    g.sample_size(20);
-
-    g.bench_function("registry_replay_full_file", |b| {
-        b.iter(|| {
-            let mut h = ReplayHandler::new();
-            itch5::Parser::new(&mmap).parse_stream(&mut h).unwrap();
-            black_box((
-                h.adds, h.execs, h.cancels, h.deletes, h.replaces, h.skipped, h.errors,
-            ));
-        });
-    });
-    g.finish();
-}
-
-criterion_group!(
-    benches,
-    bench_single_op_latencies,
-    bench_query_scaling,
-    bench_bulk,
-    bench_itch_replay,
-);
-criterion_main!(benches);
