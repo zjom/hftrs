@@ -110,4 +110,6 @@ mod server;
 pub use server::{MoldUDP64Server, ServerHandle, build_packet};
 mod util;
 
+pub use crossbeam::channel::{Receiver, Sender};
+
 pub use zerocopy::FromBytes;
