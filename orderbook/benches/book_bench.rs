@@ -36,7 +36,7 @@ use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, 
 use memmap2::Mmap;
 
 use itch5::messages::*;
-use orderbook::registry::Registry;
+use orderbook::registry::HashMapRegistry;
 use orderbook::{Order, OrderBook, Side};
 
 const HOT_BOOK_SIZE: u64 = 50_000;
@@ -334,7 +334,7 @@ fn bench_bulk(c: &mut Criterion) {
 // ─── Realistic ITCH replay through the registry ────────────────────────────
 
 struct ReplayHandler {
-    registry: Registry,
+    registry: HashMapRegistry,
     adds: u64,
     execs: u64,
     cancels: u64,
@@ -347,7 +347,7 @@ struct ReplayHandler {
 impl ReplayHandler {
     fn new() -> Self {
         Self {
-            registry: Registry::with_capacity(1 << 13),
+            registry: HashMapRegistry::with_capacity(1 << 13),
             adds: 0,
             execs: 0,
             cancels: 0,
@@ -515,7 +515,9 @@ impl itch5::MessageHandler for ReplayHandler {
 /// the recorded ITCH file. Reports both the wall time per replay and the
 /// effective book-event rate (add + execute + cancel + delete + replace).
 fn bench_itch_replay(c: &mut Criterion) {
-    let Some(mmap) = try_load_sample() else { return };
+    let Some(mmap) = try_load_sample() else {
+        return;
+    };
 
     // Pre-count book events so throughput numbers reflect what the book
     // actually did, not what the parser saw.
