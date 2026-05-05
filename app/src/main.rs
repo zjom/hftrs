@@ -6,7 +6,7 @@ use moldudp::{
     FromBytes, MoldUDP64, MoldUDP64Server, Packet, PacketKind, RetransmissionPacket,
     RetransmissionRequest, ServerHandle,
 };
-use orderbook::registry::Registry;
+use orderbook::registry::HashMapRegistry;
 use orderbook::{Order, Side};
 use std::collections::HashSet;
 use std::fs::File;
@@ -472,7 +472,7 @@ struct HandlerStats {
 }
 
 struct MessageHandler {
-    registry: Registry,
+    registry: HashMapRegistry,
     symbols_to_watch: Option<HashSet<u64>>,
     stats: HandlerStats,
 }
@@ -481,7 +481,7 @@ impl MessageHandler {
     fn new() -> MessageHandler {
         log::debug!("creating MessageHandler for all symbols");
         MessageHandler {
-            registry: Registry::with_capacity(1 << 16 + 1),
+            registry: HashMapRegistry::with_capacity(1 << 16 + 1),
             symbols_to_watch: None,
             stats: HandlerStats::default(),
         }
@@ -489,7 +489,7 @@ impl MessageHandler {
     fn with_symbols(symbols: Vec<Symbol>) -> MessageHandler {
         log::debug!("creating MessageHandler for {} symbol(s)", symbols.len());
         MessageHandler {
-            registry: Registry::with_capacity(symbols.len()),
+            registry: HashMapRegistry::with_capacity(symbols.len()),
             symbols_to_watch: Some(symbols.iter().map(|s| s.to_u64()).collect()),
             stats: HandlerStats::default(),
         }

@@ -88,7 +88,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 
 use itch5::messages::*;
 use moldudp::{Datagram, FromBytes, MoldUDP64, Packet, PacketKind, build_packet};
-use orderbook::registry::Registry;
+use orderbook::registry::HashMapRegistry;
 use orderbook::{Order, Side};
 
 const SESSION: &[u8; 10] = b"BENCHSESHN";
@@ -263,7 +263,7 @@ fn spawn_sender(
 // ─── Replay handler ────────────────────────────────────────────────────────
 
 struct ReplayHandler {
-    registry: Registry,
+    registry: HashMapRegistry,
     adds: u64,
     execs: u64,
     cancels: u64,
@@ -276,7 +276,7 @@ struct ReplayHandler {
 impl ReplayHandler {
     fn new() -> Self {
         Self {
-            registry: Registry::with_capacity(1 << 13),
+            registry: HashMapRegistry::with_capacity(1 << 13),
             adds: 0,
             execs: 0,
             cancels: 0,
