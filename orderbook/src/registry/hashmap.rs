@@ -71,6 +71,9 @@ impl HashMapRegistry {
 }
 
 impl Registry for HashMapRegistry {
+    fn new() -> Self {
+        Self::new()
+    }
     fn with_capacity(cap: usize) -> Self {
         Self::with_capacity(cap)
     }

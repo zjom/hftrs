@@ -87,6 +87,9 @@ impl VecRegistry {
 }
 
 impl Registry for VecRegistry {
+    fn new() -> Self {
+        Self::new()
+    }
     fn with_capacity(cap: usize) -> Self {
         Self::with_capacity(cap)
     }

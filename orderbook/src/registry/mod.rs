@@ -1,6 +1,7 @@
 use crate::OrderBook;
 use itch5::messages::Symbol;
 pub trait Registry {
+    fn new() -> Self;
     fn with_capacity(cap: usize) -> Self;
     fn get_symbol(&self, locate: u16) -> Option<&Symbol>;
     fn get(&self, locate: u16) -> Option<&OrderBook>;
