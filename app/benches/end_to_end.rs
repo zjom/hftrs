@@ -72,6 +72,7 @@
 //! ITCH5_BENCH_FILE=/path/to/itch.bin cargo bench -p app --bench end_to_end
 //! ```
 
+use std::cell::Cell;
 use std::fs::File;
 use std::hint::black_box;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
@@ -81,14 +82,14 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use crossbeam::channel::{self, Receiver, Sender};
 use memmap2::Mmap;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use itch5::messages::*;
 use moldudp::{Datagram, FromBytes, MoldUDP64, Packet, PacketKind, build_packet};
-use orderbook::registry::HashMapRegistry;
+use orderbook::registry::{HashMapRegistry, Registry, VecRegistry};
 use orderbook::{Order, Side};
 
 const SESSION: &[u8; 10] = b"BENCHSESHN";
@@ -262,8 +263,8 @@ fn spawn_sender(
 
 // ─── Replay handler ────────────────────────────────────────────────────────
 
-struct ReplayHandler {
-    registry: HashMapRegistry,
+struct ReplayHandler<R: Registry> {
+    registry: R,
     adds: u64,
     execs: u64,
     cancels: u64,
@@ -273,10 +274,10 @@ struct ReplayHandler {
     errors: u64,
 }
 
-impl ReplayHandler {
-    fn new() -> Self {
+impl<R: Registry> ReplayHandler<R> {
+    fn new(registry: R) -> Self {
         Self {
-            registry: HashMapRegistry::with_capacity(1 << 13),
+            registry,
             adds: 0,
             execs: 0,
             cancels: 0,
@@ -288,7 +289,7 @@ impl ReplayHandler {
     }
 }
 
-impl itch5::MessageHandler for ReplayHandler {
+impl<R: Registry> itch5::MessageHandler for ReplayHandler<R> {
     fn on_stock_directory(&mut self, msg: &StockDirectory) -> ControlFlow<()> {
         self.registry.register(msg.stock_locate(), msg.stock());
         ControlFlow::Continue(())
@@ -442,6 +443,120 @@ impl itch5::MessageHandler for ReplayHandler {
 
 // ─── Bench ─────────────────────────────────────────────────────────────────
 
+/// Per-iteration state owned by the bench thread: the handler being driven
+/// plus the credit/done plumbing for the sender thread.
+struct IterState<R: Registry> {
+    handler: ReplayHandler<R>,
+    credit_tx: Sender<()>,
+    done_rx: Receiver<()>,
+}
+
+/// Per-iteration setup: build a fresh handler, hand the sender a new credit
+/// channel pre-charged with `MAX_INFLIGHT_CHUNKS` credits, and bump the
+/// shared seq offset so the moldudp client's expected_seq stays monotonic
+/// across iterations *and* across registry parametrizations.
+fn setup_iter<R: Registry>(
+    registry: R,
+    iter_offset: &Cell<u64>,
+    total_msgs_u64: u64,
+    total_chunks: usize,
+    cmd_tx: &Sender<IterCmd>,
+) -> IterState<R> {
+    let handler = ReplayHandler::new(registry);
+    let (credit_tx, credit_rx) = channel::bounded::<()>(MAX_INFLIGHT_CHUNKS);
+    let (done_tx, done_rx) = channel::bounded::<()>(1);
+    for _ in 0..MAX_INFLIGHT_CHUNKS.min(total_chunks) {
+        credit_tx.send(()).unwrap();
+    }
+    let off = iter_offset.get();
+    cmd_tx
+        .send(IterCmd {
+            seq_offset: off,
+            credit_rx,
+            done_tx,
+        })
+        .unwrap();
+    iter_offset.set(off + total_msgs_u64);
+    IterState {
+        handler,
+        credit_tx,
+        done_rx,
+    }
+}
+
+/// Per-iteration body: drain `total_msgs` messages out of the moldudp
+/// client, parse each packet into book ops, and credit the sender as the
+/// in-flight window opens up.
+fn run_iter<R: Registry>(
+    state: IterState<R>,
+    rx: &Receiver<Datagram>,
+    total_msgs: usize,
+    total_chunks: usize,
+) {
+    let IterState {
+        mut handler,
+        credit_tx,
+        done_rx,
+    } = state;
+    let mut delivered: usize = 0;
+    let mut delivered_packets: usize = 0;
+    let extra_credits_needed = total_chunks.saturating_sub(MAX_INFLIGHT_CHUNKS);
+    let mut extra_credits_granted: usize = 0;
+    let mut next_credit_at = CHUNK_PACKETS;
+    let body_start = std::time::Instant::now();
+    let mut first_recv: Option<std::time::Duration> = None;
+    let mut recv_time = std::time::Duration::ZERO;
+    let mut parse_time = std::time::Duration::ZERO;
+    while delivered < total_msgs {
+        let t_recv = std::time::Instant::now();
+        let dgram = match rx.recv_timeout(Duration::from_secs(10)) {
+            Ok(d) => {
+                if first_recv.is_none() {
+                    first_recv = Some(body_start.elapsed());
+                }
+                d
+            }
+            Err(_) => panic!("end_to_end stalled at {delivered}/{total_msgs}"),
+        };
+        recv_time += t_recv.elapsed();
+        let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
+        match pkt.packet_kind() {
+            PacketKind::Heartbeat | PacketKind::EndOfSession => continue,
+            _ => {}
+        }
+        delivered += pkt.msg_count() as usize;
+        delivered_packets += 1;
+        let t_parse = std::time::Instant::now();
+        itch5::Parser::new(&pkt.messages)
+            .parse_stream(&mut handler)
+            .unwrap();
+        parse_time += t_parse.elapsed();
+        if extra_credits_granted < extra_credits_needed && delivered_packets >= next_credit_at {
+            let _ = credit_tx.send(());
+            extra_credits_granted += 1;
+            next_credit_at += CHUNK_PACKETS;
+        }
+    }
+    let drain_done = body_start.elapsed();
+    let _ = done_rx.recv_timeout(Duration::from_secs(2));
+    let total = body_start.elapsed();
+    eprintln!(
+        "iter: first_recv={:?} drain_done={:?} total={:?} pkts={delivered_packets} \
+         credits_granted={extra_credits_granted}/{extra_credits_needed} \
+         recv_total={:?} parse_total={:?}",
+        first_recv, drain_done, total, recv_time, parse_time
+    );
+    black_box((
+        handler.adds,
+        handler.execs,
+        handler.cancels,
+        handler.deletes,
+        handler.replaces,
+        handler.skipped,
+        handler.errors,
+    ));
+}
+
 fn bench_end_to_end(c: &mut Criterion) {
     let Some(mmap) = try_load_sample() else {
         return;
@@ -484,87 +599,42 @@ fn bench_end_to_end(c: &mut Criterion) {
     g.sample_size(10);
     g.measurement_time(Duration::from_secs(20));
 
-    g.bench_function("client→parser→book", |b| {
-        let mut iter_offset: u64 = 0;
+    // Shared across both registry parametrizations: the moldudp client tracks
+    // expected_seq monotonically across its lifetime, so iterations from
+    // either bench must use disjoint, increasing seq ranges.
+    let iter_offset = Cell::new(0u64);
+
+    g.bench_function(
+        BenchmarkId::new("client→parser→book", "hashmap"),
+        |b| {
+            b.iter_batched(
+                || {
+                    setup_iter(
+                        HashMapRegistry::new(),
+                        &iter_offset,
+                        total_msgs_u64,
+                        total_chunks,
+                        &cmd_tx,
+                    )
+                },
+                |state| run_iter(state, &rx, total_msgs, total_chunks),
+                BatchSize::PerIteration,
+            );
+        },
+    );
+
+    g.bench_function(BenchmarkId::new("client→parser→book", "vec"), |b| {
         b.iter_batched(
             || {
-                let handler = ReplayHandler::new();
-                let (credit_tx, credit_rx) = channel::bounded::<()>(MAX_INFLIGHT_CHUNKS);
-                let (done_tx, done_rx) = channel::bounded::<()>(1);
-                for _ in 0..MAX_INFLIGHT_CHUNKS.min(total_chunks) {
-                    credit_tx.send(()).unwrap();
-                }
-                cmd_tx
-                    .send(IterCmd {
-                        seq_offset: iter_offset,
-                        credit_rx,
-                        done_tx,
-                    })
-                    .unwrap();
-                iter_offset += total_msgs_u64;
-                (handler, credit_tx, done_rx)
+                setup_iter(
+                    VecRegistry::new(),
+                    &iter_offset,
+                    total_msgs_u64,
+                    total_chunks,
+                    &cmd_tx,
+                )
             },
-            |(mut handler, credit_tx, done_rx)| {
-                let mut delivered: usize = 0;
-                let mut delivered_packets: usize = 0;
-                let extra_credits_needed = total_chunks.saturating_sub(MAX_INFLIGHT_CHUNKS);
-                let mut extra_credits_granted: usize = 0;
-                let mut next_credit_at = CHUNK_PACKETS;
-                let body_start = std::time::Instant::now();
-                let mut first_recv: Option<std::time::Duration> = None;
-                let mut recv_time = std::time::Duration::ZERO;
-                let mut parse_time = std::time::Duration::ZERO;
-                while delivered < total_msgs {
-                    let t_recv = std::time::Instant::now();
-                    let dgram = match rx.recv_timeout(Duration::from_secs(10)) {
-                        Ok(d) => {
-                            if first_recv.is_none() {
-                                first_recv = Some(body_start.elapsed());
-                            }
-                            d
-                        }
-                        Err(_) => panic!("end_to_end stalled at {delivered}/{total_msgs}"),
-                    };
-                    recv_time += t_recv.elapsed();
-                    let pkt = Packet::ref_from_bytes(dgram.bytes()).unwrap();
-                    match pkt.packet_kind() {
-                        PacketKind::Heartbeat | PacketKind::EndOfSession => continue,
-                        _ => {}
-                    }
-                    delivered += pkt.msg_count() as usize;
-                    delivered_packets += 1;
-                    let t_parse = std::time::Instant::now();
-                    itch5::Parser::new(&pkt.messages)
-                        .parse_stream(&mut handler)
-                        .unwrap();
-                    parse_time += t_parse.elapsed();
-                    if extra_credits_granted < extra_credits_needed
-                        && delivered_packets >= next_credit_at
-                    {
-                        let _ = credit_tx.send(());
-                        extra_credits_granted += 1;
-                        next_credit_at += CHUNK_PACKETS;
-                    }
-                }
-                let drain_done = body_start.elapsed();
-                let _ = done_rx.recv_timeout(Duration::from_secs(2));
-                let total = body_start.elapsed();
-                eprintln!(
-                    "iter: first_recv={:?} drain_done={:?} total={:?} pkts={delivered_packets} \
-                     credits_granted={extra_credits_granted}/{extra_credits_needed} \
-                     recv_total={:?} parse_total={:?}",
-                    first_recv, drain_done, total, recv_time, parse_time
-                );
-                black_box((
-                    handler.adds,
-                    handler.execs,
-                    handler.cancels,
-                    handler.deletes,
-                    handler.replaces,
-                    handler.skipped,
-                    handler.errors,
-                ));
-            },
+            |state| run_iter(state, &rx, total_msgs, total_chunks),
             BatchSize::PerIteration,
         );
     });
