@@ -59,10 +59,10 @@ Trade-only messages (`P`), system events (`S`), and the various status messages 
 ## Benchmarks
 
 ```sh
-taskset -c 3 cargo bench -p orderbook
+cargo bench -p orderbook
 ```
 
-The bench profile inherits release optimizations (`lto = "fat"`, single codegen unit) but keeps debug symbols so you can attach `perf`. The suite ([`benches/book_bench.rs`](benches/book_bench.rs)) is divided into four groups:
+The suite ([`benches/book_bench.rs`](benches/book_bench.rs)) is divided into four groups:
 
 - **`orderbook/single_op_latency/{add,delete,execute_partial,
   execute_full,cancel_partial,replace}`** — nanosecond-resolution
