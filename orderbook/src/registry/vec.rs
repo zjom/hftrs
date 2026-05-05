@@ -2,7 +2,7 @@ use itch5::messages::Symbol;
 
 use crate::{OrderBook, registry::Registry};
 
-const DEFAULT_CAPACITY: usize = 1 << 16;
+const MAX_CAPACITY: usize = u16::MAX as usize;
 
 pub struct VecRegistry {
     /// vec of [`OrderBook`] indexed by stock locate
@@ -14,20 +14,34 @@ pub struct VecRegistry {
 }
 
 impl VecRegistry {
+    /// Creates a new [`VecRegistry`] with max capacity (1<<16)
     #[inline]
     pub fn new() -> Self {
-        Self {
-            books: Vec::with_capacity(DEFAULT_CAPACITY),
-            symbols: Vec::with_capacity(DEFAULT_CAPACITY),
-        }
+        let mut books = Vec::with_capacity(MAX_CAPACITY);
+        books.resize_with(MAX_CAPACITY, Default::default);
+
+        let mut symbols = Vec::with_capacity(MAX_CAPACITY);
+        symbols.resize_with(MAX_CAPACITY, Default::default);
+        Self { books, symbols }
     }
 
     #[inline]
     pub fn with_capacity(cap: usize) -> Self {
-        Self {
-            books: Vec::with_capacity(cap),
-            symbols: Vec::with_capacity(cap),
-        }
+        let mut books = Vec::with_capacity(cap);
+        books.resize_with(cap, Default::default);
+
+        let mut symbols = Vec::with_capacity(cap);
+        symbols.resize_with(cap, Default::default);
+        Self { books, symbols }
+    }
+
+    /// Resizes the `books` and `symbols` in-place so that `len` is equal to `new_len`.
+    /// Panics if `new_len` is greater than 1<<16
+    #[inline]
+    pub fn resize(&mut self, new_len: usize) {
+        assert!(new_len <= MAX_CAPACITY);
+        self.books.resize_with(new_len, Default::default);
+        self.symbols.resize_with(new_len, Default::default);
     }
 
     /// Resolve a locate back to its ASCII symbol for logging.
@@ -37,22 +51,29 @@ impl VecRegistry {
     }
 
     /// Create an entry for a stock locate.
+    /// Resizes underlying vectors if needed.
     #[inline]
     pub fn register(&mut self, locate: u16, symbol: &Symbol) {
+        if locate as usize >= self.len() {
+            self.resize(locate as usize);
+        }
         self.symbols[locate as usize] = Some(*symbol);
         self.books[locate as usize] = Some(OrderBook::new());
     }
 
+    /// Get the [`OrderBook`] for a stock locate if exists.
     #[inline]
     pub fn get(&self, locate: u16) -> Option<&OrderBook> {
         self.books.get(locate as usize).and_then(Option::as_ref)
     }
 
+    /// Get the [`OrderBook`] for a stock locate if exists.
     #[inline]
     pub fn get_mut(&mut self, locate: u16) -> Option<&mut OrderBook> {
         self.books.get_mut(locate as usize).and_then(Option::as_mut)
     }
 
+    /// Returns the length of the underlying vectors.
     #[inline]
     pub fn len(&self) -> usize {
         debug_assert_eq!(self.books.len(), self.symbols.len());
