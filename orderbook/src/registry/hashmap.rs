@@ -2,26 +2,27 @@ use std::collections::HashMap;
 
 use itch5::messages::Symbol;
 
-use crate::OrderBook;
+use crate::{OrderBook, registry::Registry};
 
-const DEFAULT_CAPACITY: usize = 1 << 10;
-pub struct Registry {
+const DEFAULT_CAPACITY: usize = 1 << 16;
+
+pub struct HashMapRegistry {
     /// Stock locate X OrderBook
     books: HashMap<u16, OrderBook>,
     /// Stock locate X Symbol
     symbols: HashMap<u16, Symbol>,
 }
 
-impl Registry {
+impl HashMapRegistry {
     #[inline]
-    pub fn new() -> Registry {
+    pub fn new() -> HashMapRegistry {
         Self {
             books: HashMap::with_capacity(DEFAULT_CAPACITY),
             symbols: HashMap::with_capacity(DEFAULT_CAPACITY),
         }
     }
     #[inline]
-    pub fn with_capacity(cap: usize) -> Registry {
+    pub fn with_capacity(cap: usize) -> HashMapRegistry {
         Self {
             books: HashMap::with_capacity(cap),
             symbols: HashMap::with_capacity(cap),
@@ -29,9 +30,16 @@ impl Registry {
     }
 
     /// Resolve a locate back to its ASCII symbol for logging.
+    #[deprecated(note = "use [`Self::symbol`] instead")]
     #[inline]
     pub fn symbol_str(&self, locate: u16) -> Option<&str> {
         self.symbols.get(&locate).map(|s| s.as_str())
+    }
+
+    /// Resolve a locate back to its ASCII symbol for logging.
+    #[inline]
+    pub fn get_symbol(&self, locate: u16) -> Option<&Symbol> {
+        self.symbols.get(&locate)
     }
 
     /// Create an entry for a stock locate.
@@ -61,14 +69,40 @@ impl Registry {
         self.books.len()
     }
 }
+
+impl Registry for HashMapRegistry {
+    fn get_symbol(&self, locate: u16) -> Option<&Symbol> {
+        self.get_symbol(locate)
+    }
+    fn get(&self, locate: u16) -> Option<&OrderBook> {
+        self.get(locate)
+    }
+
+    fn get_mut(&mut self, locate: u16) -> Option<&mut OrderBook> {
+        self.get_mut(locate)
+    }
+
+    fn register(&mut self, locate: u16, symbol: &Symbol) {
+        self.register(locate, symbol);
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (u16, &Symbol, &OrderBook)> {
+        self.iter()
+    }
+}
+
 pub struct Iter<'a> {
     iter: std::collections::hash_map::Iter<'a, u16, Symbol>,
-    registry: &'a Registry,
+    registry: &'a HashMapRegistry,
 }
 
 impl<'a> Iter<'a> {
     #[inline]
-    fn new(registry: &'a Registry) -> Iter<'a> {
+    fn new(registry: &'a HashMapRegistry) -> Iter<'a> {
         Self {
             iter: registry.symbols.iter(),
             registry,
@@ -94,7 +128,7 @@ impl<'a> Iterator for Iter<'a> {
 
 impl<'a> ExactSizeIterator for Iter<'a> {}
 
-impl<'a> IntoIterator for &'a Registry {
+impl<'a> IntoIterator for &'a HashMapRegistry {
     type Item = (u16, &'a Symbol, &'a OrderBook);
     type IntoIter = Iter<'a>;
 
