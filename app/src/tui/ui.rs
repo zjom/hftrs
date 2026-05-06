@@ -131,9 +131,10 @@ fn symbol_row_line(row: &VisibleRow) -> Line<'static> {
     ])
 }
 
-/// One vertical slot in the unified price ladder.
+/// One vertical slot in the unified price ladder. Either side may be
+/// `None` if no liquidity rests at that price.
 struct LadderRow {
-    price: Option<Price>,
+    price: Price,
     bid: Option<Quantity>,
     ask: Option<Quantity>,
 }
@@ -181,121 +182,172 @@ fn build_ladder(depth: &DepthLadder, max_rows: usize) -> Vec<LadderRow> {
         .into_iter()
         .rev()
         .take(max_rows)
-        .map(|(p, (bid, ask))| LadderRow {
-            price: Some(p),
-            bid,
-            ask,
-        })
+        .map(|(price, (bid, ask))| LadderRow { price, bid, ask })
         .collect()
 }
 
-fn draw_ladder_side(f: &mut Frame, area: Rect, ladder: &[LadderRow], is_bid: bool) {
-    let (label, color, is_reversed, alignment, borders, flex) = if is_bid {
-        (
-            "BIDS",
-            Color::Green,
-            true,
-            Alignment::Right,
-            Borders::TOP | Borders::RIGHT,
-            Flex::End,
-        )
-    } else {
-        (
-            "ASKS",
-            Color::Red,
-            false,
-            Alignment::Left,
-            Borders::TOP,
-            Flex::Start,
-        )
-    };
+/// Static rendering config for one side of the ladder. Two factory methods
+/// (`bids`, `asks`) own all the per-side knobs, so the renderer only needs
+/// to know which one it's drawing.
+#[derive(Clone, Copy)]
+struct LadderSide {
+    is_bid: bool,
+    label: &'static str,
+    color: Color,
+    alignment: Alignment,
+    borders: Borders,
+    flex: Flex,
+    /// `(header, width)` ordered for this side's reading direction — bids
+    /// read right-to-left from the spread, so the price column sits last.
+    columns: [(&'static str, u16); 3],
+    /// Endpoints of the per-row share gradient: rows fade from `dim` at
+    /// minimal share toward `peak` at the largest qty on this side.
+    dim: (u8, u8, u8),
+    peak: (u8, u8, u8),
+}
 
-    let levels: Vec<_> = ladder
-        .iter()
-        .filter(|row| row.price.is_some_and(|_| side_qty(row, is_bid).is_some()))
-        .collect();
-    let total: Quantity = levels.iter().filter_map(|row| side_qty(row, is_bid)).sum();
-    let n_levels = levels.len();
-
-    let mut column_defs = vec![
-        ("price", Constraint::Length(12)),
-        ("qty", Constraint::Length(12)),
-        ("share", Constraint::Length(8)),
-    ];
-
-    if is_reversed {
-        column_defs.reverse();
+impl LadderSide {
+    fn bids() -> Self {
+        Self {
+            is_bid: true,
+            label: "BIDS",
+            color: Color::Green,
+            alignment: Alignment::Right,
+            borders: Borders::TOP | Borders::RIGHT,
+            flex: Flex::End,
+            columns: [("share", 8), ("qty", 12), ("price", 12)],
+            dim: (20, 60, 20),
+            peak: (140, 255, 140),
+        }
     }
 
-    let header_cells: Vec<Cell> = column_defs
-        .iter()
-        .map(|(h, _)| Cell::from(Line::from(*h).alignment(alignment)))
-        .collect();
-    let constraints: Vec<Constraint> = column_defs.iter().map(|(_, c)| *c).collect();
+    fn asks() -> Self {
+        Self {
+            is_bid: false,
+            label: "ASKS",
+            color: Color::Red,
+            alignment: Alignment::Left,
+            borders: Borders::TOP,
+            flex: Flex::Start,
+            columns: [("price", 12), ("qty", 12), ("share", 8)],
+            dim: (60, 20, 20),
+            peak: (255, 140, 140),
+        }
+    }
 
-    let header =
-        Row::new(header_cells).style(Style::default().fg(color).add_modifier(Modifier::BOLD));
+    fn qty_of(&self, row: &LadderRow) -> Option<Quantity> {
+        if self.is_bid { row.bid } else { row.ask }
+    }
+
+    /// Reorder a canonical `[price, qty, share]` triple into this side's
+    /// column order.
+    fn order<T>(&self, [price, qty, share]: [T; 3]) -> [T; 3] {
+        if self.is_bid {
+            [share, qty, price]
+        } else {
+            [price, qty, share]
+        }
+    }
+
+    fn cell(&self, s: impl Into<String>) -> Cell<'static> {
+        Cell::from(Line::from(s.into()).alignment(self.alignment))
+    }
+
+    /// Linear interpolation between `dim` and `peak`. `intensity` is the
+    /// row's qty as a fraction of the largest qty on this side.
+    fn shade(&self, intensity: f64) -> Color {
+        let t = intensity.clamp(0.0, 1.0);
+        let lerp = |a: u8, b: u8| (a as f64 + (b as f64 - a as f64) * t).round() as u8;
+        Color::Rgb(
+            lerp(self.dim.0, self.peak.0),
+            lerp(self.dim.1, self.peak.1),
+            lerp(self.dim.2, self.peak.2),
+        )
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+struct LadderStats {
+    total: Quantity,
+    max_qty: Quantity,
+    n_levels: usize,
+}
+
+impl LadderStats {
+    fn collect(ladder: &[LadderRow], side: &LadderSide) -> Self {
+        ladder
+            .iter()
+            .filter_map(|r| side.qty_of(r))
+            .fold(Self::default(), |mut s, q| {
+                s.total += q;
+                s.max_qty = s.max_qty.max(q);
+                s.n_levels += 1;
+                s
+            })
+    }
+}
+
+fn draw_ladder_side(f: &mut Frame, area: Rect, ladder: &[LadderRow], is_bid: bool) {
+    let side = if is_bid {
+        LadderSide::bids()
+    } else {
+        LadderSide::asks()
+    };
+    let stats = LadderStats::collect(ladder, &side);
+
+    let header = Row::new(side.columns.map(|(h, _)| side.cell(h)))
+        .style(Style::default().fg(side.color).add_modifier(Modifier::BOLD));
+    let constraints = side.columns.map(|(_, w)| Constraint::Length(w));
 
     let rows: Vec<Row> = if ladder.is_empty() {
-        let empty_cells: Vec<Cell> = vec!["—", "—", "—"]
-            .into_iter()
-            .map(|s| Cell::from(Line::from(s).alignment(alignment)))
-            .collect();
-        vec![Row::new(empty_cells)]
+        vec![Row::new(side.order(["—"; 3]).map(|s| side.cell(s)))]
     } else {
         ladder
             .iter()
-            .map(|row| {
-                let mut row_data = match (row.price, side_qty(row, is_bid)) {
-                    (Some(p), Some(q)) => {
-                        let pct = if total == 0 {
-                            0.0
-                        } else {
-                            (q as f64) / (total as f64) * 100.0
-                        };
-                        vec![price(p), q.to_string(), format!("{:>5.1}%", pct)]
-                    }
-                    // Price exists on the other side only — keep the price
-                    // column populated so the row aligns visually, but blank
-                    // qty/share to make clear there's no liquidity here.
-                    // (Some(p), None) => vec![price(p), String::new(), String::new()],
-                    // Spacer row in the merged ladder: leave everything blank
-                    // so the negative space conveys the price gap.
-                    (_, _) => vec![String::new(), String::new(), String::new()],
-                };
-
-                if is_reversed {
-                    row_data.reverse();
-                }
-                let cells: Vec<Cell> = row_data
-                    .into_iter()
-                    .map(|s| Cell::from(Line::from(s).alignment(alignment)))
-                    .collect();
-
-                Row::new(cells)
-            })
+            .map(|row| ladder_data_row(row, &side, &stats))
             .collect()
     };
 
-    let table_title = Line::from(format!(" {} ({} lvls, total={}) ", label, n_levels, total))
-        .style(Style::default().fg(color))
-        .centered();
+    let title = Line::from(format!(
+        " {} ({} lvls, total={}) ",
+        side.label, stats.n_levels, stats.total
+    ))
+    .style(Style::default().fg(side.color))
+    .centered();
 
     let table = Table::new(rows, constraints)
         .header(header)
         .block(
             Block::default()
-                .borders(borders)
-                .title(table_title)
+                .borders(side.borders)
+                .title(title)
                 .padding(Padding::horizontal(2)),
         )
-        .flex(flex);
+        .flex(side.flex);
 
     f.render_widget(table, area);
 }
 
-fn side_qty(row: &LadderRow, is_bid: bool) -> Option<Quantity> {
-    if is_bid { row.bid } else { row.ask }
+fn ladder_data_row(row: &LadderRow, side: &LadderSide, stats: &LadderStats) -> Row<'static> {
+    let qty = side.qty_of(row);
+    let cells: [String; 3] = match qty {
+        Some(q) => {
+            let pct = if stats.total > 0 {
+                (q as f64) / (stats.total as f64) * 100.0
+            } else {
+                0.0
+            };
+            [price(row.price), q.to_string(), format!("{:>5.1}%", pct)]
+        }
+        None => [String::new(), String::new(), String::new()],
+    };
+
+    let style = match (qty, stats.max_qty) {
+        (Some(q), m) if m > 0 => Style::default().fg(side.shade(q as f64 / m as f64)),
+        _ => Style::default(),
+    };
+
+    Row::new(side.order(cells).map(|s| side.cell(s))).style(style)
 }
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
