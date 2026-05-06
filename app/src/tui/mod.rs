@@ -1,14 +1,17 @@
 //! Terminal UI for live exploration of the registry.
 //!
 //! Runs on a dedicated thread. To minimise impact on the receive loop, the
-//! TUI shares the [`MessageHandler`] via [`SharedHandler`]: it acquires the
-//! mutex briefly each frame to build a [`Snapshot`] of registry state, then
-//! renders without holding any lock. Redraws are gated to ~10 Hz so contention
-//! with the hot path is negligible.
+//! TUI shares the [`MessageHandler`] via [`SharedHandler`]: each frame it
+//! computes the [`Viewport`] from the terminal size (lock-free), acquires
+//! the mutex only long enough for [`App::refresh`] to materialise every
+//! visible cell into the app's caches, then drops the lock and renders.
+//! Redraws are gated to ~10 Hz so contention with the hot path is
+//! negligible.
 //!
 //! [`MessageHandler`]: crate::handler::MessageHandler
 //! [`SharedHandler`]: crate::handler::SharedHandler
-//! [`Snapshot`]: crate::report::Snapshot
+//! [`Viewport`]: app::Viewport
+//! [`App::refresh`]: app::App::refresh
 
 mod app;
 mod ui;
@@ -23,12 +26,14 @@ use crossterm::terminal::{
 use orderbook::registry::Registry;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Size;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 pub use app::App;
+use app::Viewport;
 
 /// Approximate redraw interval. Chosen to keep mutex contention with the
 /// receive loop low while remaining responsive to keystrokes.
@@ -86,15 +91,18 @@ fn event_loop<R: Registry>(
 
         let now = Instant::now();
         if now.duration_since(last_draw) >= FRAME_INTERVAL {
-            // Briefly lock for the snapshot AND draw: the renderer needs the
-            // registry to fetch best bid/ask for visible rows only. Holding
-            // the lock for the duration of the draw is fine — it's bounded by
-            // the small number of visible rows and the depth ladder.
-            let h = handler.lock().expect("handler mutex poisoned");
-            app.refresh(&*h);
-            let registry = h.registry();
-            terminal.draw(|f| ui::draw(f, &mut app, registry))?;
-            drop(h);
+            // Compute layout sizing from the terminal size before locking, so
+            // refresh can pre-fetch exactly what the next draw will display
+            // and the lock can be dropped before any rendering happens.
+            let size = terminal.size().context("getting terminal size")?;
+            app.set_viewport(viewport_for(size));
+
+            {
+                let h = handler.lock().expect("handler mutex poisoned");
+                app.refresh(&*h);
+            }
+
+            terminal.draw(|f| ui::draw(f, &mut app))?;
             last_draw = now;
         }
 
@@ -114,4 +122,16 @@ fn event_loop<R: Registry>(
         }
     }
     Ok(())
+}
+
+/// Mirror of the layout in [`ui::draw`]: outer header (3) + body (Min) +
+/// footer (3); the body holds the symbol list (Borders::ALL → −2 rows) and
+/// the depth area, whose ladder tables sit inside their own block
+/// (Borders::TOP → −1 row) above a header row.
+fn viewport_for(size: Size) -> Viewport {
+    let body_height = (size.height as usize).saturating_sub(6);
+    Viewport {
+        list_height: body_height.saturating_sub(2),
+        ladder_rows: body_height.saturating_sub(4),
+    }
 }

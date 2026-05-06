@@ -5,8 +5,17 @@
 //! symbol). The symbol cache is rebuilt only when new stock-directory
 //! messages arrive — in practice the boot-time burst — so steady-state
 //! refreshes touch the registry only to read the focused symbol's depth.
-//! Per-row best bid/ask are computed lazily during render for visible rows
-//! only; see [`crate::tui::ui`].
+//!
+//! Per-frame: callers stamp the layout-derived [`Viewport`] with
+//! [`set_viewport`] *before* taking the handler lock, then [`refresh`]
+//! materialises every visible cell into [`visible_rows`] and [`depth`] under
+//! the lock. The renderer (see [`crate::tui::ui`]) consumes only these
+//! caches, so the lock can be dropped before drawing.
+//!
+//! [`set_viewport`]: App::set_viewport
+//! [`refresh`]: App::refresh
+//! [`visible_rows`]: App::visible_rows
+//! [`depth`]: App::depth
 
 use crate::handler::{HandlerStats, MessageHandler};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -15,15 +24,34 @@ use orderbook::registry::Registry;
 use orderbook::{Price, Quantity};
 use ratatui::widgets::ListState;
 
-/// Levels per side captured for the focused symbol. The ladder widget never
-/// shows more than this many rows.
-pub const DEPTH_LEVELS: usize = 15;
-
 /// Depth ladder for the currently selected symbol.
 #[derive(Default)]
 pub struct DepthLadder {
     pub bids: Vec<(Price, Quantity)>,
     pub asks: Vec<(Price, Quantity)>,
+}
+
+/// Layout-derived row counts for the next render. Stamped by the event loop
+/// from terminal size (cheap, lock-free) so [`App::refresh`] knows exactly
+/// how much data the renderer will consume — and the renderer can run
+/// without re-deriving anything from the registry.
+#[derive(Default, Clone, Copy)]
+pub struct Viewport {
+    /// Visible row count for the symbol list (block borders subtracted).
+    pub list_height: usize,
+    /// Visible data rows for one ladder side, after block borders, the
+    /// inter-side divider, and the table header.
+    pub ladder_rows: usize,
+}
+
+/// One materialised symbol-list row. Resolved under the handler lock during
+/// [`App::refresh`] so the render pass needs no registry access.
+#[derive(Clone, Copy)]
+pub struct VisibleRow {
+    pub symbol: Symbol,
+    pub best_bid: Option<(Price, Quantity)>,
+    pub best_ask: Option<(Price, Quantity)>,
+    pub orders: usize,
 }
 
 /// Input mode: normal navigation vs. live filter editing.
@@ -48,6 +76,11 @@ pub struct App {
     /// Locate of the symbol currently selected, used to keep the same symbol
     /// highlighted across snapshots even if the filtered list re-orders.
     pub selected_locate: Option<u16>,
+    /// Layout sizing for the next render, captured before locking.
+    pub viewport: Viewport,
+    /// Pre-clipped slice of the symbol list. The first entry corresponds to
+    /// `filtered[list_state.offset()]`.
+    pub visible_rows: Vec<VisibleRow>,
     /// Last observed `stats.stock_directory_msgs`; a change implies a possible
     /// new registry entry, so the symbol cache must be rebuilt.
     last_directory_msgs: u64,
@@ -72,14 +105,30 @@ impl App {
             filter: String::new(),
             mode: Mode::Normal,
             selected_locate: None,
+            viewport: Viewport::default(),
+            visible_rows: Vec::new(),
             last_directory_msgs: 0,
             last_filter: None,
         }
     }
 
+    /// Stamp the layout sizing for the upcoming refresh. Must be called
+    /// before [`refresh`] (and before locking the handler) so the lock
+    /// window covers exactly the work the renderer will display.
+    ///
+    /// [`refresh`]: Self::refresh
+    pub fn set_viewport(&mut self, viewport: Viewport) {
+        self.viewport = viewport;
+    }
+
     /// Pull a fresh view of the registry and handler stats. Skips the symbol
     /// cache rebuild when no new stock-directory messages have arrived, and
-    /// the filter index rebuild when neither input changed.
+    /// the filter index rebuild when neither input changed. Materialises
+    /// every visible cell into [`visible_rows`] and [`depth`] so the render
+    /// pass can run lock-free.
+    ///
+    /// [`visible_rows`]: Self::visible_rows
+    /// [`depth`]: Self::depth
     pub fn refresh<R: Registry>(&mut self, handler: &MessageHandler<R>) {
         self.stats = *handler.stats();
 
@@ -118,16 +167,57 @@ impl App {
                 .map(|&j| self.symbols[j].0)
         });
 
-        // Build depth ladder for the selected symbol only.
+        // Pre-clip the symbol list to the viewport and resolve each visible
+        // row's best bid/ask. Mirrors ratatui's own scroll-into-view logic so
+        // the render pass can hand the pre-clipped slice straight to `List`
+        // with offset 0.
+        let height = self.viewport.list_height;
+        let total = self.filtered.len();
+        let mut offset = self.list_state.offset();
+        if let Some(sel) = self.list_state.selected() {
+            if sel < offset {
+                offset = sel;
+            } else if height > 0 && sel >= offset + height {
+                offset = sel + 1 - height;
+            }
+        }
+        offset = offset.min(total.saturating_sub(height));
+        *self.list_state.offset_mut() = offset;
+
+        let visible_count = total.saturating_sub(offset).min(height);
+        self.visible_rows.clear();
+        self.visible_rows.reserve(visible_count);
+        for &i in &self.filtered[offset..offset + visible_count] {
+            let (locate, symbol) = self.symbols[i];
+            self.visible_rows.push(match handler.registry().get(locate) {
+                Some(book) => VisibleRow {
+                    symbol,
+                    best_bid: book.best_bid(),
+                    best_ask: book.best_ask(),
+                    orders: book.len(),
+                },
+                None => VisibleRow {
+                    symbol,
+                    best_bid: None,
+                    best_ask: None,
+                    orders: 0,
+                },
+            });
+        }
+
+        // Fetch only as much depth as the ladder can show. We split the row
+        // budget across both sides so the merged ladder (with spacers for
+        // the spread) fills the available height in the typical case.
+        let per_side = self.viewport.ladder_rows.div_ceil(2);
         self.depth = match self
             .selected_locate
             .and_then(|loc| handler.registry().get(loc))
         {
-            Some(book) => {
-                let (bids, asks) = book.depth(DEPTH_LEVELS);
+            Some(book) if per_side > 0 => {
+                let (bids, asks) = book.depth(per_side);
                 DepthLadder { bids, asks }
             }
-            None => DepthLadder::default(),
+            _ => DepthLadder::default(),
         };
     }
 
