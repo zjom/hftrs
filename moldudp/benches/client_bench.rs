@@ -205,9 +205,7 @@ fn bench_itch_sized_throughput(c: &mut Criterion) {
 
     g.bench_function("5k_packets_x30_x38B", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
-        let batch: Vec<Vec<u8>> = (0..msgs_per_packet)
-            .map(|_| vec![0xABu8; 38])
-            .collect();
+        let batch: Vec<Vec<u8>> = (0..msgs_per_packet).map(|_| vec![0xABu8; 38]).collect();
         b.iter(|| {
             for _ in 0..packets {
                 handle.send(batch.clone());
