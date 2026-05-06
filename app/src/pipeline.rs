@@ -92,7 +92,9 @@ pub fn run(config: Config) -> Result<()> {
         .into_inner()
         .expect("handler mutex poisoned");
 
-    write_report(&handler, &config)?;
+    if config.should_make_report() {
+        write_report(&handler, &config)?;
+    }
     tracing::info!("done");
     Ok(())
 }
@@ -115,7 +117,12 @@ fn log_config_summary(config: &Config) {
     } else {
         tracing::info!("no symbols specified with --watch, watching all symbols");
     }
-    if let Some(p) = &config.output_file_path {
+
+    if !config.should_make_report() {
+        tracing::info!(
+            "running in interactive mode with no output file path specified. no report will be produced"
+        );
+    } else if let Some(p) = &config.output_file_path {
         tracing::info!("report will be written to {}", p.display());
     } else {
         tracing::info!("report will be written to stdout");

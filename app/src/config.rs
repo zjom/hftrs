@@ -68,6 +68,12 @@ pub struct Config {
     pub logfile: Option<PathBuf>,
 }
 
+impl Config {
+    pub fn should_make_report(&self) -> bool {
+        self.output_file_path.is_some() || !self.interactive
+    }
+}
+
 const DEFAULT_MULTICAST_ADDR: &str = "239.1.2.3:5000";
 const DEFAULT_REREQUEST_ADDR: &str = "127.0.0.1:6000";
 const DEFAULT_SESSION: &str = "TESTSESSN";
