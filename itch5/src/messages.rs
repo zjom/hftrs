@@ -122,7 +122,7 @@ impl std::str::FromStr for Symbol {
     type Err = &'static str;
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() == 0 {
+        if s.is_empty() {
             return Err("empty input");
         }
 
@@ -626,19 +626,22 @@ impl From<u8> for InverseIndicator {
 /// Nasdaq uses this administrative message to indicate the current trading status of a security to the trading
 /// community.
 /// Prior to the start of system hours, Nasdaq will send out a Trading Action spin. In the spin, Nasdaq will send out a
-/// Stock Trading Action message with the "T" (Trading Resumption) for all Nasdaq--- and other exchange-•-listed
-/// securities that are eligible for trading at the start of the system hours. If a security is absent from the pre-•-
-/// opening Trading Action spin, firms should assume that the security is being treated as halted in the Nasdaq
-/// platform at the start of the system hours. Please note that securities may be halted in the Nasdaq system for
-/// regulatory or operational reasons.
+/// Stock Trading Action message with the "T" (Trading Resumption) for all Nasdaq- and other exchange-listed
+/// securities that are eligible for trading at the start of the system hours.
+/// If a security is absent from the pre- opening Trading Action spin,
+/// firms should assume that the security is being treated as halted in the Nasdaq platform at the start of the system hours.
+/// Please note that securities may be halted in the Nasdaq system for regulatory or operational reasons.
 /// After the start of system hours, Nasdaq will use the Trading Action message to relay changes in trading status for an
-/// individual security. Messages will be sent when a stock is:
-/// • Halted
-/// • Paused*
-/// • Released for quotation
-/// • Released for trading
-/// * The paused status will be disseminated for NASDAQ---listed securities only. Trading pauses on non---NASDAQ listed securities
-/// will be treated simply as a halt.
+/// individual security.
+///
+/// Messages will be sent when a stock is:
+/// * Halted
+/// * Paused (see note below)
+/// * Released for quotation
+/// * Released for trading
+///
+/// Note: The paused status will be disseminated for NASDAQ-listed securities only.
+/// Trading pauses on non-NASDAQ listed securities will be treated simply as a halt.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned, Debug)]
 #[repr(C, packed)]
 pub struct StockTradingAction {
