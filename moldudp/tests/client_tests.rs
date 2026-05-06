@@ -168,7 +168,7 @@ fn packet_iter_multiple_messages() {
 #[test]
 fn packet_iter_heartbeat_yields_nothing() {
     let buf = [0u8; 20]; // msg_count = 0
-    let pkt = Packet::ref_from_bytes(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert_eq!(pkt.iter().len(), 0);
     assert!(pkt.iter().next().is_none());
 }
@@ -177,7 +177,7 @@ fn packet_iter_heartbeat_yields_nothing() {
 fn packet_iter_end_of_session_yields_nothing() {
     let mut buf = [0u8; 20];
     buf[18..20].copy_from_slice(&0xFFFFu16.to_be_bytes());
-    let pkt = Packet::ref_from_bytes(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     assert_eq!(pkt.iter().len(), 0);
     assert!(pkt.iter().next().is_none());
 }
@@ -195,7 +195,7 @@ fn packet_iter_truncated_message_stops_early() {
     buf.extend_from_slice(&10u16.to_be_bytes());
     buf.extend_from_slice(b"xy");
 
-    let pkt = Packet::ref_from_bytes(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     let msgs: Vec<_> = pkt.iter().collect();
     assert_eq!(msgs.len(), 1); // only the first valid message
 }
@@ -211,7 +211,7 @@ fn packet_exact_size_iterator() {
         buf.extend_from_slice(payload);
     }
 
-    let pkt = Packet::ref_from_bytes(&buf);
+    let pkt = Packet::ref_from_bytes(&buf).unwrap();
     let iter = pkt.iter();
     assert_eq!(iter.len(), 2);
 }
@@ -523,14 +523,14 @@ fn client_retransmits_multiple_gaps() {
         }
     }
 
-    assert!(seen.contains(&b"c".to_vec()), "should see live 'c'");
-    assert!(seen.contains(&b"e".to_vec()), "should see live 'e'");
+    assert!(seen.contains(b"c".as_slice()), "should see live 'c'");
+    assert!(seen.contains(b"e".as_slice()), "should see live 'e'");
     assert!(
-        seen.contains(&b"b".to_vec()),
+        seen.contains(b"b".as_slice()),
         "should see retransmitted 'b'"
     );
     assert!(
-        seen.contains(&b"d".to_vec()),
+        seen.contains(b"d".as_slice()),
         "should see retransmitted 'd'"
     );
 }
