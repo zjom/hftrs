@@ -3,7 +3,7 @@
 use super::app::{App, DepthLadder, Mode, SymbolRow};
 use orderbook::{Price, Quantity};
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table};
@@ -133,7 +133,7 @@ fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool) {
-    let (levels, label, color, is_reversed, alignment, borders) = if is_bid {
+    let (levels, label, color, is_reversed, alignment, borders, flex) = if is_bid {
         (
             &depth.bids,
             "BIDS",
@@ -141,6 +141,7 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
             true,
             Alignment::Right,
             Borders::TOP | Borders::RIGHT,
+            Flex::End,
         )
     } else {
         (
@@ -150,6 +151,7 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
             false,
             Alignment::Left,
             Borders::TOP,
+            Flex::Start,
         )
     };
 
@@ -205,14 +207,19 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
             .collect()
     };
 
-    let table_title = Span::styled(
-        format!(" {} ({} lvls, total={}) ", label, levels.len(), total),
-        Style::default().fg(color),
-    );
+    let table_title = Line::from(format!(
+        " {} ({} lvls, total={}) ",
+        label,
+        levels.len(),
+        total
+    ))
+    .style(Style::default().fg(color))
+    .centered();
 
     let table = Table::new(rows, constraints)
         .header(header)
-        .block(Block::default().borders(borders).title(table_title));
+        .block(Block::default().borders(borders).title(table_title))
+        .flex(flex);
 
     f.render_widget(table, area);
 }
