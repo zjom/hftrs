@@ -247,6 +247,7 @@ impl App {
         }
     }
 
+    /// Returns `true` when the user wants to quit.
     fn handle_key_normal(&mut self, key: KeyEvent) -> bool {
         // Ctrl-C also quits, mirroring the rest of the pipeline.
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
