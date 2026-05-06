@@ -1,14 +1,20 @@
-//! Pure render pass over [`App`] state. No I/O, no locks.
+//! Pure render pass over [`App`] state. Holds a borrow of the registry to
+//! resolve per-row best bid/ask only for rows actually inside the symbol
+//! list's viewport — invisible rows pay nothing per frame.
 
-use super::app::{App, DepthLadder, Mode, SymbolRow};
-use orderbook::{Price, Quantity};
+use super::app::{App, DepthLadder, Mode};
+use itch5::messages::Symbol;
+use orderbook::registry::Registry;
+use orderbook::{OrderBook, Price, Quantity};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Padding, Paragraph, Row, Table};
+use ratatui::widgets::{
+    Block, Borders, Cell, List, ListItem, ListState, Padding, Paragraph, Row, Table,
+};
 
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw<R: Registry>(f: &mut Frame, app: &mut App, registry: &R) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -19,7 +25,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .split(f.area());
 
     draw_header(f, outer[0], app);
-    draw_body(f, outer[1], app);
+    draw_body(f, outer[1], app, registry);
     draw_footer(f, outer[2], app);
 }
 
@@ -27,7 +33,7 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     let s = app.stats;
     let line = Line::from(vec![
         Span::styled("registry", Style::default().fg(Color::DarkGray)),
-        Span::raw(format!(" {} symbols", app.registered)),
+        Span::raw(format!(" {} symbols", app.symbols.len())),
         sep(),
         Span::styled("added", Style::default().fg(Color::DarkGray)),
         Span::raw(format!(" {}", s.orders_added)),
@@ -53,48 +59,86 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(line).block(block), area);
 }
 
-fn draw_body(f: &mut Frame, area: Rect, app: &App) {
+fn draw_body<R: Registry>(f: &mut Frame, area: Rect, app: &mut App, registry: &R) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(area);
-    draw_symbol_list(f, cols[0], app);
+    draw_symbol_list(f, cols[0], app, registry);
     draw_depth(f, cols[1], app);
 }
 
-fn draw_symbol_list(f: &mut Frame, area: Rect, app: &App) {
-    let items: Vec<ListItem> = app
-        .rows
-        .iter()
-        .map(|row| ListItem::new(symbol_row_line(row)))
-        .collect();
+fn draw_symbol_list<R: Registry>(f: &mut Frame, area: Rect, app: &mut App, registry: &R) {
     let title = if app.filter.is_empty() {
-        format!(" symbols [{}] ", app.rows.len())
+        format!(" symbols [{}] ", app.filtered.len())
     } else {
-        format!(" symbols [{} match \"{}\"] ", app.rows.len(), app.filter)
+        format!(
+            " symbols [{} match \"{}\"] ",
+            app.filtered.len(),
+            app.filter
+        )
     };
+    let block = Block::default().borders(Borders::ALL).title(title);
+    let inner = block.inner(area);
+    let inner_height = inner.height as usize;
+    let total = app.filtered.len();
+
+    // Adjust scroll offset so the selection stays in view, mirroring ratatui's
+    // own logic but applied before we materialise items so we can clip.
+    let selected = app.list_state.selected();
+    let mut offset = app.list_state.offset();
+    if let Some(sel) = selected {
+        if sel < offset {
+            offset = sel;
+        } else if inner_height > 0 && sel >= offset + inner_height {
+            offset = sel + 1 - inner_height;
+        }
+    }
+    let max_offset = total.saturating_sub(inner_height);
+    offset = offset.min(max_offset);
+    *app.list_state.offset_mut() = offset;
+
+    let visible_count = total.saturating_sub(offset).min(inner_height);
+    let items: Vec<ListItem> = app.filtered[offset..offset + visible_count]
+        .iter()
+        .map(|&i| {
+            let (locate, symbol) = app.symbols[i];
+            ListItem::new(symbol_row_line(&symbol, registry.get(locate)))
+        })
+        .collect();
+
+    // Drive the List with a local state whose offset is 0 — we already
+    // pre-clipped, so the widget should render every item we passed in.
+    let mut local_state = ListState::default()
+        .with_offset(0)
+        .with_selected(selected.and_then(|s| s.checked_sub(offset)));
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(block)
         .highlight_style(
             Style::default()
                 .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
-    let mut state = app.list_state;
-    f.render_stateful_widget(list, area, &mut state);
+    f.render_stateful_widget(list, area, &mut local_state);
 }
 
-fn symbol_row_line(row: &SymbolRow) -> Line<'static> {
-    let bid = row
-        .best_bid
-        .map_or_else(|| "—".to_string(), |(p, q)| format!("{} x{}", price(p), q));
-    let ask = row
-        .best_ask
-        .map_or_else(|| "—".to_string(), |(p, q)| format!("{} x{}", price(p), q));
+fn symbol_row_line(symbol: &Symbol, book: Option<&OrderBook>) -> Line<'static> {
+    let (bid, ask, orders) = match book {
+        Some(book) => {
+            let bid = book
+                .best_bid()
+                .map_or_else(|| "—".to_string(), |(p, q)| format!("{} x{}", price(p), q));
+            let ask = book
+                .best_ask()
+                .map_or_else(|| "—".to_string(), |(p, q)| format!("{} x{}", price(p), q));
+            (bid, ask, book.len())
+        }
+        None => ("—".to_string(), "—".to_string(), 0),
+    };
     Line::from(vec![
         Span::styled(
-            format!("{:<8}", row.symbol.as_str().trim_end()),
+            format!("{:<8}", symbol.as_str().trim_end()),
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
@@ -103,7 +147,7 @@ fn symbol_row_line(row: &SymbolRow) -> Line<'static> {
         Span::styled(format!("{:<14}", ask), Style::default().fg(Color::Red)),
         Span::raw(" "),
         Span::styled(
-            format!("orders={}", row.order_count),
+            format!("orders={}", orders),
             Style::default().fg(Color::DarkGray),
         ),
     ])
@@ -113,10 +157,10 @@ fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
     let title = app
         .list_state
         .selected()
-        .and_then(|i| app.rows.get(i))
+        .and_then(|i| app.symbol_at(i))
         .map_or_else(
             || " depth ".to_string(),
-            |r| format!(" depth · {} ", r.symbol.as_str().trim_end()),
+            |(_, sym)| format!(" depth · {} ", sym.as_str().trim_end()),
         );
 
     let block = Block::default().borders(Borders::ALL).title(title);

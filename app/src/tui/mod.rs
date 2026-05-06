@@ -86,13 +86,15 @@ fn event_loop<R: Registry>(
 
         let now = Instant::now();
         if now.duration_since(last_draw) >= FRAME_INTERVAL {
-            // Briefly lock to snapshot. The lock is held only for the duration
-            // of this snapshot build (one pass over the registry).
-            {
-                let h = handler.lock().expect("handler mutex poisoned");
-                app.refresh(&*h);
-            }
-            terminal.draw(|f| ui::draw(f, &app))?;
+            // Briefly lock for the snapshot AND draw: the renderer needs the
+            // registry to fetch best bid/ask for visible rows only. Holding
+            // the lock for the duration of the draw is fine — it's bounded by
+            // the small number of visible rows and the depth ladder.
+            let h = handler.lock().expect("handler mutex poisoned");
+            app.refresh(&*h);
+            let registry = h.registry();
+            terminal.draw(|f| ui::draw(f, &mut app, registry))?;
+            drop(h);
             last_draw = now;
         }
 
