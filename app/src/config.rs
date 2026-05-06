@@ -1,3 +1,9 @@
+//! CLI configuration. Single source of truth for runtime options; consumed
+//! by [`crate::pipeline::run`].
+
+use clap::builder::ArgPredicate;
+
+use crate::report::ReportFormat;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 
@@ -10,13 +16,21 @@ pub struct Config {
     #[arg(short = 'f', long = "file")]
     pub file_path: PathBuf,
 
-    /// Path to file to write output.
+    /// Path to file to write output. If omitted, the report is written to stdout.
     #[arg(short = 'o', long = "out")]
     pub output_file_path: Option<PathBuf>,
 
-    /// Symbols to watch
+    /// Symbols to watch. If omitted, all symbols in the stock directory are tracked.
     #[arg(short = 'w', long = "watch")]
     pub symbol_strs: Option<Vec<String>>,
+
+    /// Report output format.
+    #[arg(long = "format", default_value_t = ReportFormat::default())]
+    pub report_format: ReportFormat,
+
+    /// Number of price levels per side included in the report's depth ladder.
+    #[arg(long = "depth", default_value_t = DEFAULT_REPORT_DEPTH)]
+    pub report_depth: usize,
 
     /// Session identifier. Strings shorter than 10 bytes are right-padded with
     /// spaces; longer strings are truncated.
@@ -41,9 +55,21 @@ pub struct Config {
     /// separate packets due to MTU.
     #[arg(long, default_value_t = DEFAULT_MAX_MSGS)]
     pub max_msgs: usize,
+
+    /// Run an interactive tui
+    #[arg(short = 'I', long, default_value_t = false)]
+    pub interactive: bool,
+
+    /// Where to write logs and traces.
+    #[arg(
+        long = "logfile",
+        default_value_if("interactive", ArgPredicate::IsPresent, "hftrs.log")
+    )]
+    pub logfile: Option<PathBuf>,
 }
 
 const DEFAULT_MULTICAST_ADDR: &str = "239.1.2.3:5000";
 const DEFAULT_REREQUEST_ADDR: &str = "127.0.0.1:6000";
 const DEFAULT_SESSION: &str = "TESTSESSN";
 const DEFAULT_MAX_MSGS: usize = 100;
+const DEFAULT_REPORT_DEPTH: usize = 10;

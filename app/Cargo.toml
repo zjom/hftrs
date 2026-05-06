@@ -13,10 +13,12 @@ orderbook = {path = "../orderbook"}
 memmap2 = "0.9.10"
 rand = "0.10.1"
 anyhow = "1.0.102"
-env_logger = "0.11.10"
-log = "0.4.29"
+tracing = "0.1.44"
+tracing-subscriber = {version = "0.3.20", features = ["env-filter"]}
 ctrlc = "3.5.2"
 clap = {version="4.6.1", features=["derive"]}
+ratatui = "0.30"
+crossterm = "0.29"
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false, features = ["html_reports", "cargo_bench_support"] }
