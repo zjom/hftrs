@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use itch5::messages::Symbol;
 use orderbook::registry::Registry;
 use orderbook::{Price, Quantity};
-use ratatui::widgets::{ListState, TableState};
+use ratatui::widgets::ListState;
 
 /// Levels per side captured for the focused symbol. The ladder widget never
 /// shows more than this many rows.
@@ -46,7 +46,6 @@ pub struct App {
     pub registered: usize,
     pub depth: DepthLadder,
     pub list_state: ListState,
-    pub depth_state: TableState,
     pub filter: String,
     pub mode: Mode,
     /// Locate of the symbol currently selected, used to keep the same symbol
@@ -68,7 +67,6 @@ impl App {
             registered: 0,
             depth: DepthLadder::default(),
             list_state: ListState::default(),
-            depth_state: TableState::default(),
             filter: String::new(),
             mode: Mode::Normal,
             selected_locate: None,
