@@ -138,10 +138,10 @@ fn extract_messages(mmap: &[u8], limit: Option<usize>) -> Vec<Vec<u8>> {
             Ok((body, next)) => {
                 out.push(body.to_vec());
                 rest = next;
-                if let Some(cap) = limit {
-                    if out.len() >= cap {
-                        break;
-                    }
+                if let Some(cap) = limit
+                    && out.len() >= cap
+                {
+                    break;
                 }
             }
             Err(_) => break,
@@ -604,24 +604,21 @@ fn bench_end_to_end(c: &mut Criterion) {
     // either bench must use disjoint, increasing seq ranges.
     let iter_offset = Cell::new(0u64);
 
-    g.bench_function(
-        BenchmarkId::new("client→parser→book", "hashmap"),
-        |b| {
-            b.iter_batched(
-                || {
-                    setup_iter(
-                        HashMapRegistry::new(),
-                        &iter_offset,
-                        total_msgs_u64,
-                        total_chunks,
-                        &cmd_tx,
-                    )
-                },
-                |state| run_iter(state, &rx, total_msgs, total_chunks),
-                BatchSize::PerIteration,
-            );
-        },
-    );
+    g.bench_function(BenchmarkId::new("client→parser→book", "hashmap"), |b| {
+        b.iter_batched(
+            || {
+                setup_iter(
+                    HashMapRegistry::new(),
+                    &iter_offset,
+                    total_msgs_u64,
+                    total_chunks,
+                    &cmd_tx,
+                )
+            },
+            |state| run_iter(state, &rx, total_msgs, total_chunks),
+            BatchSize::PerIteration,
+        );
+    });
 
     g.bench_function(BenchmarkId::new("client→parser→book", "vec"), |b| {
         b.iter_batched(
