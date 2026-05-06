@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Padding, Paragraph, Row, Table};
 
 pub fn draw(f: &mut Frame, app: &App) {
     let outer = Layout::default()
@@ -218,7 +218,12 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
 
     let table = Table::new(rows, constraints)
         .header(header)
-        .block(Block::default().borders(borders).title(table_title))
+        .block(
+            Block::default()
+                .borders(borders)
+                .title(table_title)
+                .padding(Padding::horizontal(2)),
+        )
         .flex(flex);
 
     f.render_widget(table, area);
