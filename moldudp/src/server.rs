@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use bon::Builder;
 use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, trace, warn};
 
 use crate::packet;
 use crate::util::pad_session;
@@ -215,6 +215,13 @@ impl MoldUDP64Server {
     pub fn start(&self) -> io::Result<ServerHandle> {
         let downstream = UdpSocket::bind(SocketAddrV4::new(self.interface_addr, 0))?;
         let rereq = UdpSocket::bind(self.rerequest_bind_addr)?;
+        info!(
+            multicast_addr = %self.multicast_addr,
+            interface = %self.interface_addr,
+            rereq_bind = %self.rerequest_bind_addr,
+            downstream_local = ?downstream.local_addr().ok(),
+            "bound MoldUDP64 server sockets"
+        );
         self.start_with_sockets(downstream, rereq)
     }
 
@@ -228,6 +235,14 @@ impl MoldUDP64Server {
     ) -> io::Result<ServerHandle> {
         let session = pad_session(&self.session);
         let dest = SocketAddr::V4(self.multicast_addr);
+        info!(
+            session = %String::from_utf8_lossy(&session),
+            dest = %dest,
+            max_payload = self.max_payload,
+            heartbeat_interval = ?self.heartbeat_interval,
+            initial_seq = self.seq_num,
+            "starting MoldUDP64 server"
+        );
         // Per-message log keyed by absolute seq num. We don't preserve packet
         // boundaries — re-requests synthesise a fresh packet from the range.
         let log: Arc<DB> = Arc::new(Mutex::new(BTreeMap::new()));
@@ -235,7 +250,7 @@ impl MoldUDP64Server {
             if self.command_queue_size == 0 {
                 channel::unbounded::<ServerCommand>()
             } else {
-                channel::bounded::<ServerCommand>(1000_000)
+                channel::bounded::<ServerCommand>(1_000_000)
             }
         };
 
@@ -246,6 +261,8 @@ impl MoldUDP64Server {
             let heartbeat_interval = self.heartbeat_interval;
             let seq_num = self.seq_num;
             spawn(move || {
+                let span = info_span!("sender", dest = %dest);
+                let _enter = span.enter();
                 sender_loop(
                     downstream,
                     dest,
@@ -261,7 +278,12 @@ impl MoldUDP64Server {
         {
             let log = Arc::clone(&log);
             let max_payload = self.max_payload;
-            spawn(move || rerequest_loop(rereq, session, log, max_payload));
+            let local = rereq.local_addr().ok();
+            spawn(move || {
+                let span = info_span!("rereq", local = ?local);
+                let _enter = span.enter();
+                rerequest_loop(rereq, session, log, max_payload)
+            });
         }
 
         Ok(ServerHandle { tx: cmd_tx })
@@ -313,14 +335,15 @@ fn send_periodic(
     } else {
         packet::HEARTBEAT_IDENT
     };
+    let kind = if stopped {
+        "end-of-session"
+    } else {
+        "heartbeat"
+    };
     let pkt = build_special(session, next_seq, msg_count);
-    if let Err(e) = socket.send_to(&pkt, dest) {
-        let kind = if stopped {
-            "end-of-session"
-        } else {
-            "heartbeat"
-        };
-        error!("periodic {kind} send error: {e}");
+    match socket.send_to(&pkt, dest) {
+        Ok(_) => trace!(kind, seq = next_seq, "sent periodic packet"),
+        Err(error) => error!(error = %error, kind, seq = next_seq, "periodic send failed"),
     }
 }
 
@@ -334,6 +357,11 @@ fn sender_loop(
     heartbeat_interval: Duration,
     mut next_seq: u64,
 ) {
+    debug!(
+        session = %String::from_utf8_lossy(&session),
+        next_seq,
+        "sender loop started"
+    );
     let mut stopped = false;
 
     loop {
@@ -350,15 +378,34 @@ fn sender_loop(
                     }
 
                     let count = msgs.len() as u64;
-                    store_messages(&log, next_seq, &msgs);
                     let pkt_seq = next_seq;
+                    store_messages(&log, pkt_seq, &msgs);
                     next_seq += count;
-                    for msgs in chunk_messages(msgs, max_payload) {
+                    let chunks = chunk_messages(msgs, max_payload);
+                    let n_chunks = chunks.len();
+                    for msgs in chunks {
                         let pkt = build_packet(&session, pkt_seq, &msgs);
-                        if let Err(e) = socket.send_to(&pkt, dest) {
-                            error!("downstream send error at seq {next_seq}: {e}");
+                        match socket.send_to(&pkt, dest) {
+                            Ok(bytes) => trace!(
+                                seq = pkt_seq,
+                                msg_count = msgs.len(),
+                                bytes,
+                                "sent downstream packet"
+                            ),
+                            Err(error) => error!(
+                                error = %error,
+                                seq = pkt_seq,
+                                msg_count = msgs.len(),
+                                "downstream send failed"
+                            ),
                         }
                     }
+                    debug!(
+                        start_seq = pkt_seq,
+                        msg_count = count,
+                        chunks = n_chunks,
+                        "broadcast Send completed"
+                    );
                 }
                 ServerCommand::SendDropped(msgs) => {
                     if stopped {
@@ -370,9 +417,14 @@ fn sender_loop(
                         continue;
                     }
                     let count = msgs.len() as u64;
-                    store_messages(&log, next_seq, &msgs);
-                    debug!("packet at seq {next_seq} ({count} msg(s)) staged but not sent");
+                    let pkt_seq = next_seq;
+                    store_messages(&log, pkt_seq, &msgs);
                     next_seq += count;
+                    debug!(
+                        start_seq = pkt_seq,
+                        msg_count = count,
+                        "staged messages without broadcasting (gap injected)"
+                    );
                 }
                 ServerCommand::Heartbeat => {
                     // After StopSession, an explicit heartbeat becomes an EoS
@@ -381,25 +433,34 @@ fn sender_loop(
                 }
                 ServerCommand::EndOfSession => {
                     let pkt = build_special(&session, next_seq, packet::END_OF_SESSION_IDENT);
-                    if let Err(e) = socket.send_to(&pkt, dest) {
-                        error!("end-of-session send error: {e}");
+                    match socket.send_to(&pkt, dest) {
+                        Ok(_) => info!(seq = next_seq, "sent end-of-session"),
+                        Err(error) => {
+                            error!(error = %error, seq = next_seq, "end-of-session send failed")
+                        }
                     }
-                    info!("server: end-of-session at seq {next_seq}");
                 }
                 ServerCommand::ChangeSession(s) => {
                     if stopped {
                         warn!("ChangeSession ignored: session has been stopped");
                         continue;
                     }
-                    session = pad_session(&s);
+                    let new_session = pad_session(&s);
+                    info!(
+                        prev_session = %String::from_utf8_lossy(&session),
+                        new_session = %String::from_utf8_lossy(&new_session),
+                        seq = next_seq,
+                        "session identifier changed"
+                    );
+                    session = new_session;
                 }
                 ServerCommand::StopSession => {
                     if stopped {
                         continue;
                     }
                     info!(
-                        "server: stop-session at seq {next_seq}; \
-                         end-of-session will be sent in place of heartbeats"
+                        seq = next_seq,
+                        "stop-session: end-of-session will replace heartbeats"
                     );
                     stopped = true;
                 }
@@ -408,7 +469,7 @@ fn sender_loop(
                 send_periodic(&socket, dest, &session, next_seq, stopped);
             }
             Err(RecvTimeoutError::Disconnected) => {
-                debug!("server: command channel disconnected; sender loop exiting");
+                debug!("command channel disconnected; sender loop exiting");
                 break;
             }
         }
@@ -416,28 +477,39 @@ fn sender_loop(
 }
 
 fn rerequest_loop(socket: UdpSocket, session: [u8; 10], log: Arc<DB>, max_payload: usize) {
+    debug!(
+        session = %String::from_utf8_lossy(&session),
+        "re-request loop started"
+    );
     let mut buf = [0u8; HEADER_LEN];
     loop {
         let (n, peer) = match socket.recv_from(&mut buf) {
             Ok(x) => x,
-            Err(e) => {
-                error!("rerequest recv error: {e}");
+            Err(error) => {
+                error!(error = %error, "re-request recv failed; loop exiting");
                 break;
             }
         };
         if n < HEADER_LEN {
-            warn!("short re-request from {peer}: {n} bytes");
+            warn!(peer = %peer, bytes = n, "discarding short re-request");
             continue;
         }
         if buf[..10] != session[..] {
-            warn!("session mismatch on re-request from {peer}");
+            warn!(
+                peer = %peer,
+                expected_session = %String::from_utf8_lossy(&session),
+                received_session = %String::from_utf8_lossy(&buf[..10]),
+                "discarding re-request: session mismatch"
+            );
             continue;
         }
         let start_seq = u64::from_be_bytes(buf[10..18].try_into().unwrap());
         let want = u16::from_be_bytes(buf[18..20].try_into().unwrap()) as u64;
         if want == 0 {
+            trace!(peer = %peer, start_seq, "ignoring re-request with msg_count=0");
             continue;
         }
+        trace!(peer = %peer, start_seq, want, "received re-request");
 
         let chunks: Vec<Vec<Vec<u8>>> = {
             // Collect contiguous messages from start_seq. If something is missing
@@ -448,24 +520,44 @@ fn rerequest_loop(socket: UdpSocket, session: [u8; 10], log: Arc<DB>, max_payloa
         };
 
         if chunks.is_empty() {
-            debug!("nothing in log for re-request from {peer} starting at {start_seq}");
+            debug!(
+                peer = %peer,
+                start_seq,
+                want,
+                "no messages in log to satisfy re-request"
+            );
             continue;
         }
 
-        for msgs in chunks {
-            let pkt = build_packet(&session, start_seq, &msgs);
-            if let Err(e) = socket.send_to(&pkt, peer) {
-                error!("retx send error to {peer}: {e}");
-            } else {
-                debug!(
-                    "retransmitted {} msg(s) starting at seq {} to {}",
-                    msgs.len(),
-                    start_seq,
-                    peer
-                );
+        let total_msgs: usize = chunks.iter().map(Vec::len).sum();
+        for msgs in &chunks {
+            let pkt = build_packet(&session, start_seq, msgs);
+            match socket.send_to(&pkt, peer) {
+                Ok(bytes) => trace!(
+                    peer = %peer,
+                    seq = start_seq,
+                    msg_count = msgs.len(),
+                    bytes,
+                    "sent retransmission packet"
+                ),
+                Err(error) => error!(
+                    error = %error,
+                    peer = %peer,
+                    seq = start_seq,
+                    "retransmission send failed"
+                ),
             }
         }
+        debug!(
+            peer = %peer,
+            start_seq,
+            requested = want,
+            served = total_msgs,
+            chunks = chunks.len(),
+            "served re-request"
+        );
     }
+    debug!("re-request loop exited");
 }
 
 fn chunk_messages(

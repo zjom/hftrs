@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
     thread::spawn,
 };
-use tracing::{error, warn};
+use tracing::{debug, error, info, info_span, trace, warn};
 use zerocopy::{FromBytes, IntoBytes};
 
 use crate::packet::{Packet, PacketHeader};
@@ -124,7 +124,6 @@ impl MoldUDP64 {
     /// # Errors
     ///
     /// Returns an error if any socket cannot be created or configured.
-    #[must_use]
     pub fn start(&self) -> io::Result<(Receiver<Datagram>, Sender<RetransmissionRequest>)> {
         let mcast_socket = UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
@@ -132,6 +131,12 @@ impl MoldUDP64 {
         ))?;
         mcast_socket.join_multicast_v4(self.multicast_addr.ip(), &self.interface_addr)?;
         let rereq_socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+        info!(
+            multicast_addr = %self.multicast_addr,
+            interface = %self.interface_addr,
+            rereq_local = ?rereq_socket.local_addr().ok(),
+            "joined multicast group"
+        );
 
         self.start_with_sockets(mcast_socket, rereq_socket, &self.rerequest_server_addrs)
     }
@@ -144,6 +149,16 @@ impl MoldUDP64 {
         rereq: UdpSocket,
         servers: &[SocketAddr],
     ) -> io::Result<(Receiver<Datagram>, Sender<RetransmissionRequest>)> {
+        info!(
+            servers = ?servers,
+            expected_session = ?self.expected_session_ident,
+            expected_seq_num = ?self.expected_seq_num,
+            max_rerequest_retries = self.max_rerequest_retries,
+            pool_size = POOL_SIZE,
+            buf_size = BUF_SIZE,
+            "starting MoldUDP64 client"
+        );
+
         // --- Buffer pool ---
         let pool: Pool = Arc::new(ArrayQueue::new(POOL_SIZE));
         for _ in 0..POOL_SIZE {
@@ -162,6 +177,8 @@ impl MoldUDP64 {
             let mut seq = self.expected_seq_num;
             let req_tx = req_tx.clone();
             spawn(move || {
+                let span = info_span!("multicast_recv");
+                let _enter = span.enter();
                 multicast_recv_loop(downstream, pool, data_tx, req_tx, &mut session, &mut seq);
             });
         }
@@ -177,22 +194,45 @@ impl MoldUDP64 {
             let req_tx = req_tx.clone();
             let max_rerequest_retries = self.max_rerequest_retries;
             spawn(move || {
-                while let Ok(RetransmissionRequest { req, attempts }) = req_rx.recv()
-                    && attempts < max_rerequest_retries
-                {
-                    if let Err(e) = socket.send_to(req.as_bytes(), &server_addr) {
-                        warn!("failed to send re-request to {server_addr}: {e}");
-                        if req_tx
-                            .try_send(RetransmissionRequest {
-                                attempts: attempts + 1,
-                                req: req,
-                            })
-                            .is_err()
-                        {
-                            error!("re-request queue full or disconnected");
+                let span = info_span!("rereq_send", server = %server_addr);
+                let _enter = span.enter();
+                debug!("re-request sender thread started");
+                while let Ok(RetransmissionRequest { req, attempts }) = req_rx.recv() {
+                    let seq = req.seq_num.get();
+                    let msg_count = req.msg_count.get();
+                    if attempts >= max_rerequest_retries {
+                        warn!(
+                            seq,
+                            msg_count, attempts, "abandoning re-request: max retries reached"
+                        );
+                        continue;
+                    }
+                    match socket.send_to(req.as_bytes(), server_addr) {
+                        Ok(_) => trace!(seq, msg_count, attempts, "sent re-request"),
+                        Err(error) => {
+                            warn!(
+                                error = %error,
+                                seq,
+                                msg_count,
+                                attempts,
+                                "re-request send failed; requeuing"
+                            );
+                            if req_tx
+                                .try_send(RetransmissionRequest {
+                                    attempts: attempts + 1,
+                                    req,
+                                })
+                                .is_err()
+                            {
+                                error!(
+                                    seq,
+                                    msg_count, "re-request queue full or disconnected; dropping"
+                                );
+                            }
                         }
                     }
                 }
+                debug!("re-request sender thread exiting");
             });
         }
         drop(req_rx); // last clone lives in the spawned threads
@@ -204,7 +244,11 @@ impl MoldUDP64 {
             let pool = Arc::clone(&pool);
             let data_tx = data_tx.clone();
             let socket = Arc::clone(&rereq_socket);
-            spawn(move || rerequest_recv_loop(socket, pool, data_tx));
+            spawn(move || {
+                let span = info_span!("rereq_recv");
+                let _enter = span.enter();
+                rerequest_recv_loop(socket, pool, data_tx);
+            });
         }
 
         Ok((data_rx, req_tx))
@@ -219,82 +263,133 @@ fn multicast_recv_loop(
     expected_session_ident: &mut Option<[u8; 10]>,
     expected_seq_num: &mut Option<u64>,
 ) {
+    debug!("multicast recv loop started");
     loop {
-        let mut buf = pool
-            .pop()
-            .unwrap_or_else(|| vec![0u8; BUF_SIZE].into_boxed_slice());
+        let mut buf = pool.pop().unwrap_or_else(|| {
+            trace!("buffer pool exhausted; falling back to heap allocation");
+            vec![0u8; BUF_SIZE].into_boxed_slice()
+        });
 
         let n = match socket.recv(&mut buf[..]) {
             Ok(n) => n,
-            Err(e) => {
-                error!("multicast recv error: {e}");
+            Err(error) => {
+                error!(error = %error, "multicast recv failed; loop exiting");
                 let _ = pool.push(buf);
                 break;
             }
         };
 
         if n < Packet::MIN_PACKET_LEN {
-            error!("incomplete multicast datagram");
+            warn!(bytes = n, "discarding short multicast datagram");
             let _ = pool.push(buf);
             continue;
         }
 
         let packet = match Packet::ref_from_bytes(&buf) {
             Ok(packet) => packet,
-            Err(e) => {
-                error!("multicast recv packet parse error: {e}");
+            Err(error) => {
+                error!(error = %error, bytes = n, "multicast packet parse failed; loop exiting");
                 let _ = pool.push(buf);
                 break;
             }
         };
 
+        let pkt_session = *packet.session_ident_raw();
+        let pkt_seq = packet.seq_num();
+        let pkt_msg_count = packet.msg_count();
+        trace!(
+            session = %String::from_utf8_lossy(&pkt_session),
+            seq = pkt_seq,
+            msg_count = pkt_msg_count,
+            bytes = n,
+            "received multicast packet"
+        );
+
         // Gap detection: if the live stream has skipped ahead of what we were
         // expecting, ask the re-request server for the missing range.
-        if let (Some(exp_session), Some(exp_seq)) =
-            (expected_session_ident.deref(), *expected_seq_num)
-        {
-            let session_matches = exp_session == packet.session_ident_raw();
-            if session_matches && packet.seq_num() > exp_seq {
-                let gap = packet.seq_num() - exp_seq;
-                let msg_count = gap.min(u16::MAX as u64) as u16;
-                let req = RetransmissionPacket {
-                    session: *packet.session_ident_raw(),
-                    seq_num: exp_seq.into(),
-                    msg_count: msg_count.into(),
-                };
-                if req_tx.try_send(RetransmissionRequest::new(req)).is_err() {
-                    error!("re-request queue full or disconnected");
+        match (expected_session_ident.deref(), *expected_seq_num) {
+            (Some(exp_session), Some(exp_seq)) if *exp_session == pkt_session => {
+                if pkt_seq > exp_seq {
+                    let gap = pkt_seq - exp_seq;
+                    let msg_count = gap.min(u16::MAX as u64) as u16;
+                    warn!(
+                        session = %String::from_utf8_lossy(&pkt_session),
+                        expected_seq = exp_seq,
+                        received_seq = pkt_seq,
+                        gap,
+                        rereq_msg_count = msg_count,
+                        "sequence gap detected; enqueuing re-request"
+                    );
+                    let req = RetransmissionPacket {
+                        session: pkt_session,
+                        seq_num: exp_seq.into(),
+                        msg_count: msg_count.into(),
+                    };
+                    if req_tx.try_send(RetransmissionRequest::new(req)).is_err() {
+                        error!(
+                            seq = exp_seq,
+                            msg_count, "re-request queue full or disconnected"
+                        );
+                    }
                 }
             }
-            // Session change: we have no idea what to ask for; just resync.
+            (Some(exp_session), _) => {
+                // Session change: we have no idea what to ask for; just resync.
+                info!(
+                    prev_session = %String::from_utf8_lossy(exp_session),
+                    new_session = %String::from_utf8_lossy(&pkt_session),
+                    new_seq = pkt_seq,
+                    "session change detected; resynchronising"
+                );
+            }
+            (None, _) => {
+                info!(
+                    session = %String::from_utf8_lossy(&pkt_session),
+                    seq = pkt_seq,
+                    "locked onto session"
+                );
+            }
         }
 
         // Advance expectation to the seq right after this packet's last msg.
-        *expected_seq_num = Some(packet.seq_num() + packet.msg_count() as u64);
-        *expected_session_ident = Some(*packet.session_ident_raw());
+        *expected_seq_num = Some(pkt_seq + pkt_msg_count as u64);
+        *expected_session_ident = Some(pkt_session);
         forward(&data_tx, &pool, buf, n, "multicast");
     }
+    debug!("multicast recv loop exited");
 }
 
 fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Datagram>) {
+    debug!("re-request recv loop started");
     loop {
-        let mut buf = pool
-            .pop()
-            .unwrap_or_else(|| vec![0u8; BUF_SIZE].into_boxed_slice());
+        let mut buf = pool.pop().unwrap_or_else(|| {
+            trace!("buffer pool exhausted; falling back to heap allocation");
+            vec![0u8; BUF_SIZE].into_boxed_slice()
+        });
 
         let n = match socket.recv(&mut buf[..]) {
             Ok(n) => n,
-            Err(e) => {
-                error!("re-request recv error: {e}");
+            Err(error) => {
+                error!(error = %error, "re-request recv failed; loop exiting");
                 let _ = pool.push(buf);
                 break;
             }
         };
 
         if n < Packet::MIN_PACKET_LEN {
-            error!("incomplete retransmission datagram");
+            warn!(bytes = n, "discarding short retransmission datagram");
             let _ = pool.push(buf);
             continue;
+        }
+
+        if let Ok(packet) = Packet::ref_from_bytes(&buf[..]) {
+            trace!(
+                session = %String::from_utf8_lossy(packet.session_ident_raw()),
+                seq = packet.seq_num(),
+                msg_count = packet.msg_count(),
+                bytes = n,
+                "received retransmission"
+            );
         }
 
         // Retransmissions are out-of-order historic packets — we deliberately
@@ -302,19 +397,22 @@ fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Datag
         // (session_ident, seq_num).
         forward(&data_tx, &pool, buf, n, "retx");
     }
+    debug!("re-request recv loop exited");
 }
 
 #[inline]
-fn forward(data_tx: &Sender<Datagram>, pool: &Pool, buf: Buffer, len: usize, src: &'static str) {
+fn forward(data_tx: &Sender<Datagram>, pool: &Pool, buf: Buffer, len: usize, source: &'static str) {
     let dgram = Datagram {
         buf: Some(buf),
         len,
         pool: Arc::clone(pool),
     };
     match data_tx.try_send(dgram) {
-        Err(channel::TrySendError::Full(_)) => warn!("datagram consumer full ({src})"),
+        Err(channel::TrySendError::Full(_)) => {
+            warn!(source, len, "dropping datagram: consumer channel full")
+        }
         Err(channel::TrySendError::Disconnected(_)) => {
-            warn!("datagram consumer dropped ({src})");
+            warn!(source, "dropping datagram: consumer channel disconnected");
         }
         Ok(()) => {}
     }
