@@ -3,10 +3,10 @@
 use super::app::{App, DepthLadder, Mode, SymbolRow};
 use orderbook::{Price, Quantity};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table};
 
 pub fn draw(f: &mut Frame, app: &App) {
     let outer = Layout::default()
@@ -110,15 +110,15 @@ fn symbol_row_line(row: &SymbolRow) -> Line<'static> {
 }
 
 fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
-    let title = match app
+    let title = app
         .list_state
         .selected()
         .and_then(|i| app.rows.get(i))
-        .map(|r| r.symbol.as_str().trim_end().to_string())
-    {
-        Some(s) => format!(" depth · {} ", s),
-        None => " depth ".to_string(),
-    };
+        .map_or_else(
+            || " depth ".to_string(),
+            |r| format!(" depth · {} ", r.symbol.as_str().trim_end()),
+        );
+
     let block = Block::default().borders(Borders::ALL).title(title);
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -127,35 +127,59 @@ fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(inner);
+
     draw_ladder_side(f, columns[0], &app.depth, true);
     draw_ladder_side(f, columns[1], &app.depth, false);
 }
 
-const LADDER_SIDE_TABLE_HEADER: [&'static str; 3] = ["price", "qty", "share"];
-
 fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool) {
-    let levels = if is_bid { &depth.bids } else { &depth.asks };
-    let total: Quantity = levels.iter().map(|(_, q)| *q).sum();
-    let header_color = if is_bid { Color::Green } else { Color::Red };
-    let header_label = if is_bid { "BIDS" } else { "ASKS" };
-    let header_contents = if is_bid {
-        LADDER_SIDE_TABLE_HEADER.into_iter().rev().collect()
+    let (levels, label, color, is_reversed, alignment, borders) = if is_bid {
+        (
+            &depth.bids,
+            "BIDS",
+            Color::Green,
+            true,
+            Alignment::Right,
+            Borders::TOP | Borders::RIGHT,
+        )
     } else {
-        LADDER_SIDE_TABLE_HEADER.to_vec()
+        (
+            &depth.asks,
+            "ASKS",
+            Color::Red,
+            false,
+            Alignment::Left,
+            Borders::TOP,
+        )
     };
 
-    let header = Row::new(header_contents).style(
-        Style::default()
-            .fg(header_color)
-            .add_modifier(Modifier::BOLD),
-    );
+    let total: Quantity = levels.iter().map(|(_, q)| *q).sum();
+
+    let mut column_defs = vec![
+        ("price", Constraint::Length(12)),
+        ("qty", Constraint::Length(12)),
+        ("share", Constraint::Length(8)),
+    ];
+
+    if is_reversed {
+        column_defs.reverse();
+    }
+
+    let header_cells: Vec<Cell> = column_defs
+        .iter()
+        .map(|(h, _)| Cell::from(Line::from(*h).alignment(alignment)))
+        .collect();
+    let constraints: Vec<Constraint> = column_defs.iter().map(|(_, c)| *c).collect();
+
+    let header =
+        Row::new(header_cells).style(Style::default().fg(color).add_modifier(Modifier::BOLD));
 
     let rows: Vec<Row> = if levels.is_empty() {
-        vec![Row::new(vec![
-            "—".to_string(),
-            "—".to_string(),
-            "—".to_string(),
-        ])]
+        let empty_cells: Vec<Cell> = vec!["—", "—", "—"]
+            .into_iter()
+            .map(|s| Cell::from(Line::from(s).alignment(alignment)))
+            .collect();
+        vec![Row::new(empty_cells)]
     } else {
         levels
             .iter()
@@ -165,33 +189,31 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
                 } else {
                     (*q as f64) / (total as f64) * 100.0
                 };
-                let mut row = vec![price(*p), q.to_string(), format!("{:>5.1}%", pct)];
-                if is_bid {
-                    row.reverse();
+
+                let mut row_data = vec![price(*p), q.to_string(), format!("{:>5.1}%", pct)];
+
+                if is_reversed {
+                    row_data.reverse();
                 }
-                Row::new(row)
+                let cells: Vec<Cell> = row_data
+                    .into_iter()
+                    .map(|s| Cell::from(Line::from(s).alignment(alignment)))
+                    .collect();
+
+                Row::new(cells)
             })
             .collect()
     };
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(8),
-        ],
-    )
-    .header(header)
-    .block(Block::default().borders(Borders::TOP).title(Span::styled(
-        format!(
-            " {} ({} lvls, total={}) ",
-            header_label,
-            levels.len(),
-            total
-        ),
-        Style::default().fg(header_color),
-    )));
+    let table_title = Span::styled(
+        format!(" {} ({} lvls, total={}) ", label, levels.len(), total),
+        Style::default().fg(color),
+    );
+
+    let table = Table::new(rows, constraints)
+        .header(header)
+        .block(Block::default().borders(borders).title(table_title));
+
     f.render_widget(table, area);
 }
 
