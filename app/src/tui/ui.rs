@@ -161,8 +161,8 @@ fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
         .split(inner);
 
     let rows = build_ladder(&app.depth, app.viewport.ladder_rows);
-    draw_ladder_side(f, columns[0], &app.depth, &rows, true);
-    draw_ladder_side(f, columns[1], &app.depth, &rows, false);
+    draw_ladder_side(f, columns[0], &rows, true);
+    draw_ladder_side(f, columns[1], &rows, false);
 }
 
 /// Merge bids and asks into a single descending price sequence, inserting
@@ -227,16 +227,9 @@ fn build_ladder(depth: &DepthLadder, max_rows: usize) -> Vec<LadderRow> {
     rows
 }
 
-fn draw_ladder_side(
-    f: &mut Frame,
-    area: Rect,
-    depth: &DepthLadder,
-    ladder: &[LadderRow],
-    is_bid: bool,
-) {
-    let (levels, label, color, is_reversed, alignment, borders, flex) = if is_bid {
+fn draw_ladder_side(f: &mut Frame, area: Rect, ladder: &[LadderRow], is_bid: bool) {
+    let (label, color, is_reversed, alignment, borders, flex) = if is_bid {
         (
-            &depth.bids,
             "BIDS",
             Color::Green,
             true,
@@ -246,7 +239,6 @@ fn draw_ladder_side(
         )
     } else {
         (
-            &depth.asks,
             "ASKS",
             Color::Red,
             false,
@@ -256,7 +248,12 @@ fn draw_ladder_side(
         )
     };
 
-    let total: Quantity = levels.iter().map(|(_, q)| *q).sum();
+    let levels: Vec<_> = ladder
+        .iter()
+        .filter(|row| row.price.is_some_and(|_| side_qty(row, is_bid).is_some()))
+        .collect();
+    let total: Quantity = levels.iter().filter_map(|row| side_qty(row, is_bid)).sum();
+    let n_levels = levels.len();
 
     let mut column_defs = vec![
         ("price", Constraint::Length(12)),
@@ -318,14 +315,9 @@ fn draw_ladder_side(
             .collect()
     };
 
-    let table_title = Line::from(format!(
-        " {} ({} lvls, total={}) ",
-        label,
-        levels.len(),
-        total
-    ))
-    .style(Style::default().fg(color))
-    .centered();
+    let table_title = Line::from(format!(" {} ({} lvls, total={}) ", label, n_levels, total))
+        .style(Style::default().fg(color))
+        .centered();
 
     let table = Table::new(rows, constraints)
         .header(header)
