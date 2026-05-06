@@ -84,6 +84,11 @@ impl VecRegistry {
     pub fn iter(&self) -> Iter<'_> {
         Iter::new(self)
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Registry for VecRegistry {
@@ -110,6 +115,10 @@ impl Registry for VecRegistry {
 
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn iter(&self) -> impl Iterator<Item = (u16, &Symbol, &OrderBook)> {
@@ -171,5 +180,11 @@ impl<'a> IntoIterator for &'a VecRegistry {
             symbols: self.symbols.iter(),
             locate: 0,
         }
+    }
+}
+
+impl Default for VecRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }

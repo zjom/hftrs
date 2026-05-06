@@ -68,6 +68,11 @@ impl HashMapRegistry {
         debug_assert_eq!(self.books.len(), self.symbols.len());
         self.books.len()
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Registry for HashMapRegistry {
@@ -94,6 +99,10 @@ impl Registry for HashMapRegistry {
 
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn iter(&self) -> impl Iterator<Item = (u16, &Symbol, &OrderBook)> {
@@ -141,5 +150,11 @@ impl<'a> IntoIterator for &'a HashMapRegistry {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+impl Default for HashMapRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }

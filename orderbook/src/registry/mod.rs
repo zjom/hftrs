@@ -9,6 +9,9 @@ pub trait Registry {
     fn register(&mut self, locate: u16, symbol: &Symbol);
     fn len(&self) -> usize;
     fn iter(&self) -> impl Iterator<Item = (u16, &Symbol, &OrderBook)>;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 mod hashmap;
