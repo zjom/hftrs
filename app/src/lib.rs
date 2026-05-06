@@ -18,5 +18,7 @@ pub mod handler;
 pub mod pipeline;
 pub mod replay;
 pub mod report;
+pub mod tui;
+
 pub use config::Config;
 pub use pipeline::run;
