@@ -144,19 +144,17 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
             "—".to_string(),
         ])]
     } else {
-        let rows = levels.iter().map(|(p, q)| {
-            let pct = if total == 0 {
-                0.0
-            } else {
-                (*q as f64) / (total as f64) * 100.0
-            };
-            Row::new(vec![price(*p), q.to_string(), format!("{:>5.1}%", pct)])
-        });
-        if is_bid {
-            rows.collect()
-        } else {
-            rows.rev().collect()
-        }
+        levels
+            .iter()
+            .map(|(p, q)| {
+                let pct = if total == 0 {
+                    0.0
+                } else {
+                    (*q as f64) / (total as f64) * 100.0
+                };
+                Row::new(vec![price(*p), q.to_string(), format!("{:>5.1}%", pct)])
+            })
+            .collect()
     };
 
     let header = Row::new(vec!["price", "qty", "share"]).style(
