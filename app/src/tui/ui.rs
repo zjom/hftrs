@@ -131,11 +131,24 @@ fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
     draw_ladder_side(f, columns[1], &app.depth, false);
 }
 
+const LADDER_SIDE_TABLE_HEADER: [&'static str; 3] = ["price", "qty", "share"];
+
 fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool) {
     let levels = if is_bid { &depth.bids } else { &depth.asks };
     let total: Quantity = levels.iter().map(|(_, q)| *q).sum();
     let header_color = if is_bid { Color::Green } else { Color::Red };
     let header_label = if is_bid { "BIDS" } else { "ASKS" };
+    let header_contents = if is_bid {
+        LADDER_SIDE_TABLE_HEADER.into_iter().rev().collect()
+    } else {
+        LADDER_SIDE_TABLE_HEADER.to_vec()
+    };
+
+    let header = Row::new(header_contents).style(
+        Style::default()
+            .fg(header_color)
+            .add_modifier(Modifier::BOLD),
+    );
 
     let rows: Vec<Row> = if levels.is_empty() {
         vec![Row::new(vec![
@@ -152,16 +165,15 @@ fn draw_ladder_side(f: &mut Frame, area: Rect, depth: &DepthLadder, is_bid: bool
                 } else {
                     (*q as f64) / (total as f64) * 100.0
                 };
-                Row::new(vec![price(*p), q.to_string(), format!("{:>5.1}%", pct)])
+                let mut row = vec![price(*p), q.to_string(), format!("{:>5.1}%", pct)];
+                if is_bid {
+                    row.reverse();
+                }
+                Row::new(row)
             })
             .collect()
     };
 
-    let header = Row::new(vec!["price", "qty", "share"]).style(
-        Style::default()
-            .fg(header_color)
-            .add_modifier(Modifier::BOLD),
-    );
     let table = Table::new(
         rows,
         [
