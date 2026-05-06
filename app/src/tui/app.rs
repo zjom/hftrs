@@ -150,22 +150,15 @@ impl App {
         // Reconcile selection with the (possibly resized) filtered set.
         let selected = self
             .selected_locate
-            .and_then(|loc| {
-                self.filtered
-                    .iter()
-                    .position(|&i| self.symbols[i].0 == loc)
-            })
+            .and_then(|loc| self.filtered.iter().position(|&i| self.symbols[i].0 == loc))
             .or(if self.filtered.is_empty() {
                 None
             } else {
                 Some(0)
             });
         self.list_state.select(selected);
-        self.selected_locate = selected.and_then(|i| {
-            self.filtered
-                .get(i)
-                .map(|&j| self.symbols[j].0)
-        });
+        self.selected_locate =
+            selected.and_then(|i| self.filtered.get(i).map(|&j| self.symbols[j].0));
 
         // Pre-clip the symbol list to the viewport and resolve each visible
         // row's best bid/ask. Mirrors ratatui's own scroll-into-view logic so
@@ -189,20 +182,21 @@ impl App {
         self.visible_rows.reserve(visible_count);
         for &i in &self.filtered[offset..offset + visible_count] {
             let (locate, symbol) = self.symbols[i];
-            self.visible_rows.push(match handler.registry().get(locate) {
-                Some(book) => VisibleRow {
-                    symbol,
-                    best_bid: book.best_bid(),
-                    best_ask: book.best_ask(),
-                    orders: book.len(),
-                },
-                None => VisibleRow {
-                    symbol,
-                    best_bid: None,
-                    best_ask: None,
-                    orders: 0,
-                },
-            });
+            self.visible_rows
+                .push(match handler.registry().get(locate) {
+                    Some(book) => VisibleRow {
+                        symbol,
+                        best_bid: book.best_bid(),
+                        best_ask: book.best_ask(),
+                        orders: book.len(),
+                    },
+                    None => VisibleRow {
+                        symbol,
+                        best_bid: None,
+                        best_ask: None,
+                        orders: 0,
+                    },
+                });
         }
 
         // Fetch only as much depth as the ladder can show. We split the row
@@ -270,7 +264,9 @@ impl App {
             KeyCode::Home => self.move_to(0),
             KeyCode::End if !self.filtered.is_empty() => self.move_to(self.filtered.len() - 1),
             KeyCode::Char('g') => self.move_to(0),
-            KeyCode::Char('G') if !self.filtered.is_empty() => self.move_to(self.filtered.len() - 1),
+            KeyCode::Char('G') if !self.filtered.is_empty() => {
+                self.move_to(self.filtered.len() - 1)
+            }
             _ => {}
         }
         false

@@ -91,9 +91,11 @@ fn draw_symbol_list(f: &mut Frame, area: Rect, app: &mut App) {
     // whose offset is 0 so it renders the slice verbatim, translating the
     // absolute selection into a slice-relative index.
     let offset = app.list_state.offset();
-    let mut local_state = ListState::default()
-        .with_offset(0)
-        .with_selected(app.list_state.selected().and_then(|s| s.checked_sub(offset)));
+    let mut local_state = ListState::default().with_offset(0).with_selected(
+        app.list_state
+            .selected()
+            .and_then(|s| s.checked_sub(offset)),
+    );
     let list = List::new(items)
         .block(block)
         .highlight_style(
