@@ -132,9 +132,6 @@ fn symbol_row_line(row: &VisibleRow) -> Line<'static> {
 }
 
 /// One vertical slot in the unified price ladder.
-///
-/// `price = None` is a spacer row, used to make the visual gap between two
-/// adjacent levels proportional to their tick distance.
 struct LadderRow {
     price: Option<Price>,
     bid: Option<Quantity>,
@@ -165,10 +162,8 @@ fn draw_depth(f: &mut Frame, area: Rect, app: &App) {
     draw_ladder_side(f, columns[1], &rows, false);
 }
 
-/// Merge bids and asks into a single descending price sequence, inserting
-/// blank rows wherever adjacent levels are more than one tick apart so the
-/// rendered gap reflects the price distance. Output is capped to `max_rows`
-/// so it never exceeds the cached viewport height.
+/// Merge bids and asks into a single descending price sequence. Output is
+/// capped to `max_rows` so it never exceeds the cached viewport height.
 fn build_ladder(depth: &DepthLadder, max_rows: usize) -> Vec<LadderRow> {
     use std::collections::BTreeMap;
 
@@ -179,52 +174,19 @@ fn build_ladder(depth: &DepthLadder, max_rows: usize) -> Vec<LadderRow> {
     for &(p, q) in &depth.asks {
         levels.entry(p).or_insert((None, None)).1 = Some(q);
     }
-    if levels.is_empty() {
-        return Vec::new();
-    }
 
     // Walk descending: highest price (top of book ask) first, lowest (worst
     // bid) last.
-    let sorted: Vec<_> = levels.into_iter().rev().collect();
-
-    // Visual unit = smallest observed gap. Falls back to 1 if all levels
-    // collapse onto one price (only possible with a single entry).
-    let unit = sorted
-        .windows(2)
-        .map(|w| w[0].0 - w[1].0)
-        .filter(|&d| d > 0)
-        .min()
-        .unwrap_or(1);
-
-    // Cap inserted spacers per gap so a single far-out level can't push the
-    // ladder past the available height.
-    const MAX_SPACER_ROWS: i64 = 4;
-
-    let mut rows = Vec::with_capacity(sorted.len() * 2);
-    for (i, &(p, (bid, ask))) in sorted.iter().enumerate() {
-        if rows.len() >= max_rows {
-            break;
-        }
-        rows.push(LadderRow {
+    levels
+        .into_iter()
+        .rev()
+        .take(max_rows)
+        .map(|(p, (bid, ask))| LadderRow {
             price: Some(p),
             bid,
             ask,
-        });
-        if let Some(&(next_p, _)) = sorted.get(i + 1) {
-            let spacers = ((p - next_p) / unit - 1).clamp(0, MAX_SPACER_ROWS);
-            for _ in 0..spacers {
-                if rows.len() >= max_rows {
-                    break;
-                }
-                rows.push(LadderRow {
-                    price: None,
-                    bid: None,
-                    ask: None,
-                });
-            }
-        }
-    }
-    rows
+        })
+        .collect()
 }
 
 fn draw_ladder_side(f: &mut Frame, area: Rect, ladder: &[LadderRow], is_bid: bool) {
