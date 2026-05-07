@@ -35,8 +35,7 @@
 
 use std::hint::black_box;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
@@ -153,27 +152,50 @@ fn bench_packet_parse(c: &mut Criterion) {
 
 // ─── End-to-end client throughput on loopback ──────────────────────────────
 
-/// Drive the producer on a separate thread and time only the drain.
+/// Drive sender and drain in interleaved windows.
 ///
-/// The original "send a burst, then drain" shape overflows the kernel UDP
-/// receive queue on Linux loopback (rmem_max-bound, no flow control), masking
-/// real throughput as packet loss. Running the producer concurrently keeps
-/// the receive queue near-empty and matches the steady-state behaviour of a
-/// live feed arriving paced over the wire.
-fn timed_concurrent_drain<P>(
+/// UDP loopback has no flow control: if the producer outpaces the consumer
+/// even slightly, the kernel recv queue fills and starts dropping silently.
+/// The original "send everything, then drain" shape relied on the kernel
+/// buffer holding the entire burst, which only ever worked on macOS. A
+/// concurrent producer thread defers but doesn't fix the problem — over
+/// criterion's amplified iteration counts a tiny rate mismatch still
+/// accumulates into a queue blowup.
+///
+/// Sending in small windows and draining each window before the next gives
+/// the receiver a hard ceiling on in-flight packets, regardless of rate
+/// mismatch. Window size is chosen well under the kernel buffer's capacity
+/// so a single window never overflows even at peak per-packet truesize.
+fn drive_windowed<F>(
+    handle: &moldudp::ServerHandle,
     rx: &crossbeam::channel::Receiver<Datagram>,
-    total_msgs: usize,
-    produce: P,
-) -> Duration
-where
-    P: FnOnce() + Send + 'static,
+    packets: u64,
+    msgs_per_packet: u64,
+    mut send_one: F,
+) where
+    F: FnMut(&moldudp::ServerHandle),
 {
-    let producer = thread::spawn(produce);
-    let start = Instant::now();
-    drain_data(rx, total_msgs);
-    let elapsed = start.elapsed();
-    producer.join().unwrap();
-    elapsed
+    const WINDOW: u64 = 256;
+    let mut sent: u64 = 0;
+    let mut drained: usize = 0;
+    while sent < packets {
+        let burst = (packets - sent).min(WINDOW);
+        for _ in 0..burst {
+            send_one(handle);
+        }
+        sent += burst;
+        let drain_target = drained + (burst * msgs_per_packet) as usize;
+        while drained < drain_target {
+            let dgram = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("timed out waiting for messages");
+            let pkt = Packet::ref_from_bytes(dgram.bytes()).expect("failed to parse packet");
+            match pkt.packet_kind() {
+                PacketKind::Heartbeat | PacketKind::EndOfSession => continue,
+                _ => drained += pkt.msg_count() as usize,
+            }
+        }
+    }
 }
 
 fn bench_single_message_throughput(c: &mut Criterion) {
@@ -184,14 +206,10 @@ fn bench_single_message_throughput(c: &mut Criterion) {
 
     g.bench_function("1k_single_messages", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
-        b.iter_custom(|iters| {
-            let total_packets = count * iters;
-            let h = handle.clone();
-            timed_concurrent_drain(&rx, total_packets as usize, move || {
-                for _ in 0..total_packets {
-                    h.send(vec![b"hello world".to_vec()]);
-                }
-            })
+        b.iter(|| {
+            drive_windowed(&handle, &rx, count, 1, |h| {
+                h.send(vec![b"hello world".to_vec()]);
+            });
         });
     });
     g.finish();
@@ -210,44 +228,34 @@ fn bench_batched_messages(c: &mut Criterion) {
         let batch: Vec<Vec<u8>> = (0..msgs_per_packet as usize)
             .map(|_| b"batch-payload".to_vec())
             .collect();
-        b.iter_custom(|iters| {
-            let total_packets = packets * iters;
-            let total_msgs = (total * iters) as usize;
-            let h = handle.clone();
-            let batch = batch.clone();
-            timed_concurrent_drain(&rx, total_msgs, move || {
-                for _ in 0..total_packets {
-                    h.send(batch.clone());
-                }
-            })
+        b.iter(|| {
+            drive_windowed(&handle, &rx, packets, msgs_per_packet, |h| {
+                h.send(batch.clone());
+            });
         });
     });
     g.finish();
 }
 
-/// 50 messages × 38 B per packet — close to the densest a real ITCH 5.0
+/// 30 messages × 38 B per packet — close to the densest a real ITCH 5.0
 /// feed gets through MoldUDP64 framing under a 1500 B MTU.
 fn bench_itch_sized_throughput(c: &mut Criterion) {
     let mut g = c.benchmark_group("moldudp/client_itch_shape");
-    let msgs_per_packet = 30usize; // 30 × 38 B + framing fits MTU comfortably
+    let msgs_per_packet = 30u64;
     let packets = 5_000u64;
-    let total = packets * msgs_per_packet as u64;
+    let total = packets * msgs_per_packet;
     g.throughput(Throughput::Elements(total));
     g.sample_size(15);
 
     g.bench_function("5k_packets_x30_x38B", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
-        let batch: Vec<Vec<u8>> = (0..msgs_per_packet).map(|_| vec![0xABu8; 38]).collect();
-        b.iter_custom(|iters| {
-            let total_packets = packets * iters;
-            let total_msgs = (total * iters) as usize;
-            let h = handle.clone();
-            let batch = batch.clone();
-            timed_concurrent_drain(&rx, total_msgs, move || {
-                for _ in 0..total_packets {
-                    h.send(batch.clone());
-                }
-            })
+        let batch: Vec<Vec<u8>> = (0..msgs_per_packet as usize)
+            .map(|_| vec![0xABu8; 38])
+            .collect();
+        b.iter(|| {
+            drive_windowed(&handle, &rx, packets, msgs_per_packet, |h| {
+                h.send(batch.clone());
+            });
         });
     });
     g.finish();
@@ -263,15 +271,10 @@ fn bench_large_messages(c: &mut Criterion) {
     g.bench_function("500_x_1KB_messages", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
         let payload = vec![0xABu8; msg_size];
-        b.iter_custom(|iters| {
-            let total_packets = count * iters;
-            let h = handle.clone();
-            let payload = payload.clone();
-            timed_concurrent_drain(&rx, total_packets as usize, move || {
-                for _ in 0..total_packets {
-                    h.send(vec![payload.clone()]);
-                }
-            })
+        b.iter(|| {
+            drive_windowed(&handle, &rx, count, 1, |h| {
+                h.send(vec![payload.clone()]);
+            });
         });
     });
     g.finish();
