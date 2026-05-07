@@ -161,10 +161,18 @@ impl MoldUDP64 {
             "starting MoldUDP64 client"
         );
 
-        tune_recv_buffer(&downstream, "downstream")
-            .expect("User should raise `net.core.rmem_max` prior to using this library.");
-        tune_recv_buffer(&rereq, "rereq")
-            .expect("User should raise `net.core.rmem_max` prior to using this library.");
+        tune_recv_buffer(&downstream, "downstream").unwrap_or_else(|err| {
+            panic!(
+                "User should raise `net.core.rmem_max` prior to using this library. Error: {}",
+                err
+            );
+        });
+        tune_recv_buffer(&rereq, "rereq").unwrap_or_else(|err| {
+            panic!(
+                "User should raise `net.core.rmem_max` prior to using this library. Error: {}",
+                err
+            )
+        });
 
         // --- Buffer pool ---
         let pool: Pool = Arc::new(ArrayQueue::new(POOL_SIZE));
