@@ -103,6 +103,8 @@
 mod client;
 mod errors;
 mod packet;
+#[cfg(all(feature = "iouring", target_os = "linux"))]
+mod iouring;
 pub use client::{Datagram, MoldUDP64, RetransmissionPacket, RetransmissionRequest};
 pub use errors::MoldUdpError;
 pub use packet::*;

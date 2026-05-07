@@ -255,6 +255,20 @@ impl MoldUDP64 {
     }
 }
 
+/// Outcome of processing a freshly-received datagram.
+///
+/// Lets the recv loops share the post-recv handling logic with the io_uring
+/// backend without each having to duplicate parse + gap-detection + forward.
+pub(crate) enum LoopAction {
+    /// Continue draining datagrams.
+    Continue,
+    /// Stop the loop (typically: a packet failed to parse as a `Packet` DST,
+    /// which should never happen with our `BUF_SIZE`, but is treated as a
+    /// signal to bail out).
+    Stop,
+}
+
+#[cfg(not(all(feature = "iouring", target_os = "linux")))]
 fn multicast_recv_loop(
     socket: UdpSocket,
     pool: Pool,
@@ -279,86 +293,23 @@ fn multicast_recv_loop(
             }
         };
 
-        if n < Packet::MIN_PACKET_LEN {
-            warn!(bytes = n, "discarding short multicast datagram");
-            let _ = pool.push(buf);
-            continue;
+        match process_multicast_datagram(
+            buf,
+            n,
+            &pool,
+            &data_tx,
+            &req_tx,
+            expected_session_ident,
+            expected_seq_num,
+        ) {
+            LoopAction::Continue => {}
+            LoopAction::Stop => break,
         }
-
-        let packet = match Packet::ref_from_bytes(&buf) {
-            Ok(packet) => packet,
-            Err(error) => {
-                error!(error = %error, bytes = n, "multicast packet parse failed; loop exiting");
-                let _ = pool.push(buf);
-                break;
-            }
-        };
-
-        let pkt_session = *packet.session_ident_raw();
-        let pkt_seq = packet.seq_num();
-        let pkt_msg_count = packet.msg_count();
-        trace!(
-            session = %String::from_utf8_lossy(&pkt_session),
-            seq = pkt_seq,
-            msg_count = pkt_msg_count,
-            bytes = n,
-            "received multicast packet"
-        );
-
-        // Gap detection: if the live stream has skipped ahead of what we were
-        // expecting, ask the re-request server for the missing range.
-        match (expected_session_ident.deref(), *expected_seq_num) {
-            (Some(exp_session), Some(exp_seq)) if *exp_session == pkt_session => {
-                if pkt_seq > exp_seq {
-                    let gap = pkt_seq - exp_seq;
-                    let msg_count = gap.min(u16::MAX as u64) as u16;
-                    warn!(
-                        session = %String::from_utf8_lossy(&pkt_session),
-                        expected_seq = exp_seq,
-                        received_seq = pkt_seq,
-                        gap,
-                        rereq_msg_count = msg_count,
-                        "sequence gap detected; enqueuing re-request"
-                    );
-                    let req = RetransmissionPacket {
-                        session: pkt_session,
-                        seq_num: exp_seq.into(),
-                        msg_count: msg_count.into(),
-                    };
-                    if req_tx.try_send(RetransmissionRequest::new(req)).is_err() {
-                        error!(
-                            seq = exp_seq,
-                            msg_count, "re-request queue full or disconnected"
-                        );
-                    }
-                }
-            }
-            (Some(exp_session), _) => {
-                // Session change: we have no idea what to ask for; just resync.
-                info!(
-                    prev_session = %String::from_utf8_lossy(exp_session),
-                    new_session = %String::from_utf8_lossy(&pkt_session),
-                    new_seq = pkt_seq,
-                    "session change detected; resynchronising"
-                );
-            }
-            (None, _) => {
-                info!(
-                    session = %String::from_utf8_lossy(&pkt_session),
-                    seq = pkt_seq,
-                    "locked onto session"
-                );
-            }
-        }
-
-        // Advance expectation to the seq right after this packet's last msg.
-        *expected_seq_num = Some(pkt_seq + pkt_msg_count as u64);
-        *expected_session_ident = Some(pkt_session);
-        forward(&data_tx, &pool, buf, n, "multicast");
     }
     debug!("multicast recv loop exited");
 }
 
+#[cfg(not(all(feature = "iouring", target_os = "linux")))]
 fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Datagram>) {
     debug!("re-request recv loop started");
     loop {
@@ -376,32 +327,146 @@ fn rerequest_recv_loop(socket: Arc<UdpSocket>, pool: Pool, data_tx: Sender<Datag
             }
         };
 
-        if n < Packet::MIN_PACKET_LEN {
-            warn!(bytes = n, "discarding short retransmission datagram");
-            let _ = pool.push(buf);
-            continue;
+        match process_rereq_datagram(buf, n, &pool, &data_tx) {
+            LoopAction::Continue => {}
+            LoopAction::Stop => break,
         }
-
-        if let Ok(packet) = Packet::ref_from_bytes(&buf[..]) {
-            trace!(
-                session = %String::from_utf8_lossy(packet.session_ident_raw()),
-                seq = packet.seq_num(),
-                msg_count = packet.msg_count(),
-                bytes = n,
-                "received retransmission"
-            );
-        }
-
-        // Retransmissions are out-of-order historic packets — we deliberately
-        // do NOT advance expected_* state here. The consumer reorders by
-        // (session_ident, seq_num).
-        forward(&data_tx, &pool, buf, n, "retx");
     }
     debug!("re-request recv loop exited");
 }
 
+#[cfg(all(feature = "iouring", target_os = "linux"))]
+use crate::iouring::{multicast_recv_loop, rerequest_recv_loop};
+
+/// Parses a multicast datagram, runs gap-detection, and forwards it to the
+/// consumer. Returns the buffer to the pool on the discard paths.
+pub(crate) fn process_multicast_datagram(
+    buf: Buffer,
+    n: usize,
+    pool: &Pool,
+    data_tx: &Sender<Datagram>,
+    req_tx: &Sender<RetransmissionRequest>,
+    expected_session_ident: &mut Option<[u8; 10]>,
+    expected_seq_num: &mut Option<u64>,
+) -> LoopAction {
+    if n < Packet::MIN_PACKET_LEN {
+        warn!(bytes = n, "discarding short multicast datagram");
+        let _ = pool.push(buf);
+        return LoopAction::Continue;
+    }
+
+    let packet = match Packet::ref_from_bytes(&buf) {
+        Ok(packet) => packet,
+        Err(error) => {
+            error!(error = %error, bytes = n, "multicast packet parse failed; loop exiting");
+            let _ = pool.push(buf);
+            return LoopAction::Stop;
+        }
+    };
+
+    let pkt_session = *packet.session_ident_raw();
+    let pkt_seq = packet.seq_num();
+    let pkt_msg_count = packet.msg_count();
+    trace!(
+        session = %String::from_utf8_lossy(&pkt_session),
+        seq = pkt_seq,
+        msg_count = pkt_msg_count,
+        bytes = n,
+        "received multicast packet"
+    );
+
+    // Gap detection: if the live stream has skipped ahead of what we were
+    // expecting, ask the re-request server for the missing range.
+    match (expected_session_ident.deref(), *expected_seq_num) {
+        (Some(exp_session), Some(exp_seq)) if *exp_session == pkt_session => {
+            if pkt_seq > exp_seq {
+                let gap = pkt_seq - exp_seq;
+                let msg_count = gap.min(u16::MAX as u64) as u16;
+                warn!(
+                    session = %String::from_utf8_lossy(&pkt_session),
+                    expected_seq = exp_seq,
+                    received_seq = pkt_seq,
+                    gap,
+                    rereq_msg_count = msg_count,
+                    "sequence gap detected; enqueuing re-request"
+                );
+                let req = RetransmissionPacket {
+                    session: pkt_session,
+                    seq_num: exp_seq.into(),
+                    msg_count: msg_count.into(),
+                };
+                if req_tx.try_send(RetransmissionRequest::new(req)).is_err() {
+                    error!(
+                        seq = exp_seq,
+                        msg_count, "re-request queue full or disconnected"
+                    );
+                }
+            }
+        }
+        (Some(exp_session), _) => {
+            // Session change: we have no idea what to ask for; just resync.
+            info!(
+                prev_session = %String::from_utf8_lossy(exp_session),
+                new_session = %String::from_utf8_lossy(&pkt_session),
+                new_seq = pkt_seq,
+                "session change detected; resynchronising"
+            );
+        }
+        (None, _) => {
+            info!(
+                session = %String::from_utf8_lossy(&pkt_session),
+                seq = pkt_seq,
+                "locked onto session"
+            );
+        }
+    }
+
+    // Advance expectation to the seq right after this packet's last msg.
+    *expected_seq_num = Some(pkt_seq + pkt_msg_count as u64);
+    *expected_session_ident = Some(pkt_session);
+    forward(data_tx, pool, buf, n, "multicast");
+    LoopAction::Continue
+}
+
+/// Forwards a retransmission datagram to the consumer without touching the
+/// gap-detection state — retransmissions are historic and out-of-order.
+pub(crate) fn process_rereq_datagram(
+    buf: Buffer,
+    n: usize,
+    pool: &Pool,
+    data_tx: &Sender<Datagram>,
+) -> LoopAction {
+    if n < Packet::MIN_PACKET_LEN {
+        warn!(bytes = n, "discarding short retransmission datagram");
+        let _ = pool.push(buf);
+        return LoopAction::Continue;
+    }
+
+    if let Ok(packet) = Packet::ref_from_bytes(&buf[..]) {
+        trace!(
+            session = %String::from_utf8_lossy(packet.session_ident_raw()),
+            seq = packet.seq_num(),
+            msg_count = packet.msg_count(),
+            bytes = n,
+            "received retransmission"
+        );
+    }
+
+    // Retransmissions are out-of-order historic packets — we deliberately
+    // do NOT advance expected_* state here. The consumer reorders by
+    // (session_ident, seq_num).
+    forward(data_tx, pool, buf, n, "retx");
+    LoopAction::Continue
+}
+
 #[inline]
-fn forward(data_tx: &Sender<Datagram>, pool: &Pool, buf: Buffer, len: usize, source: &'static str) {
+pub(crate) fn forward(
+    data_tx: &Sender<Datagram>,
+    pool: &Pool,
+    buf: Buffer,
+    len: usize,
+    source: &'static str,
+) {
     let dgram = Datagram {
         buf: Some(buf),
         len,
@@ -420,11 +485,11 @@ fn forward(data_tx: &Sender<Datagram>, pool: &Pool, buf: Buffer, len: usize, sou
 
 /// Size of buffer when reading from socket. Spec max is 64 KiB; oversized
 /// here for headroom against any future framing quirks.
-const BUF_SIZE: usize = 524_288;
+pub(crate) const BUF_SIZE: usize = 524_288;
 const POOL_SIZE: usize = 1024;
 
-type Buffer = Box<[u8]>;
-type Pool = Arc<ArrayQueue<Buffer>>;
+pub(crate) type Buffer = Box<[u8]>;
+pub(crate) type Pool = Arc<ArrayQueue<Buffer>>;
 
 /// A received UDP datagram backed by a pooled buffer.
 ///

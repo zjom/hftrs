@@ -5,11 +5,18 @@ license = "Unlicense"
 version = "0.1.1"
 edition = "2024"
 
+[features]
+# Use io_uring for the receive path (Linux only). When enabled on a non-Linux
+# target, the io_uring crate fails to build — this feature is meant to be
+# turned on under `--target x86_64-unknown-linux-gnu` (or similar) only.
+iouring = ["dep:io-uring"]
+
 [dependencies]
 bon = "3.9.1"
 crossbeam = "0.8.4"
 tracing = "0.1.44"
 zerocopy = {version="0.8.48", features=["derive"]}
+io-uring = { version = "0.7", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false, features = ["html_reports", "cargo_bench_support"] }
