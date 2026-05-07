@@ -135,6 +135,7 @@ pub struct MoldUDP64Server {
 /// silently (an error is logged internally).
 ///
 /// The server sender thread exits when all `ServerHandle` clones are dropped.
+#[derive(Clone)]
 pub struct ServerHandle {
     pub tx: Sender<ServerCommand>,
 }

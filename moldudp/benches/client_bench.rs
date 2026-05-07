@@ -35,7 +35,8 @@
 
 use std::hint::black_box;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
@@ -152,6 +153,29 @@ fn bench_packet_parse(c: &mut Criterion) {
 
 // ─── End-to-end client throughput on loopback ──────────────────────────────
 
+/// Drive the producer on a separate thread and time only the drain.
+///
+/// The original "send a burst, then drain" shape overflows the kernel UDP
+/// receive queue on Linux loopback (rmem_max-bound, no flow control), masking
+/// real throughput as packet loss. Running the producer concurrently keeps
+/// the receive queue near-empty and matches the steady-state behaviour of a
+/// live feed arriving paced over the wire.
+fn timed_concurrent_drain<P>(
+    rx: &crossbeam::channel::Receiver<Datagram>,
+    total_msgs: usize,
+    produce: P,
+) -> Duration
+where
+    P: FnOnce() + Send + 'static,
+{
+    let producer = thread::spawn(produce);
+    let start = Instant::now();
+    drain_data(rx, total_msgs);
+    let elapsed = start.elapsed();
+    producer.join().unwrap();
+    elapsed
+}
+
 fn bench_single_message_throughput(c: &mut Criterion) {
     let mut g = c.benchmark_group("moldudp/client_single_msg");
     let count = 1_000u64;
@@ -160,11 +184,14 @@ fn bench_single_message_throughput(c: &mut Criterion) {
 
     g.bench_function("1k_single_messages", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
-        b.iter(|| {
-            for _ in 0..count {
-                handle.send(vec![b"hello world".to_vec()]);
-            }
-            drain_data(&rx, count as usize);
+        b.iter_custom(|iters| {
+            let total_packets = count * iters;
+            let h = handle.clone();
+            timed_concurrent_drain(&rx, total_packets as usize, move || {
+                for _ in 0..total_packets {
+                    h.send(vec![b"hello world".to_vec()]);
+                }
+            })
         });
     });
     g.finish();
@@ -172,7 +199,7 @@ fn bench_single_message_throughput(c: &mut Criterion) {
 
 fn bench_batched_messages(c: &mut Criterion) {
     let mut g = c.benchmark_group("moldudp/client_batched");
-    let msgs_per_packet = 10;
+    let msgs_per_packet = 10u64;
     let packets = 1_000u64;
     let total = packets * msgs_per_packet;
     g.throughput(Throughput::Elements(total));
@@ -183,11 +210,16 @@ fn bench_batched_messages(c: &mut Criterion) {
         let batch: Vec<Vec<u8>> = (0..msgs_per_packet as usize)
             .map(|_| b"batch-payload".to_vec())
             .collect();
-        b.iter(|| {
-            for _ in 0..packets {
-                handle.send(batch.clone());
-            }
-            drain_data(&rx, total as usize);
+        b.iter_custom(|iters| {
+            let total_packets = packets * iters;
+            let total_msgs = (total * iters) as usize;
+            let h = handle.clone();
+            let batch = batch.clone();
+            timed_concurrent_drain(&rx, total_msgs, move || {
+                for _ in 0..total_packets {
+                    h.send(batch.clone());
+                }
+            })
         });
     });
     g.finish();
@@ -206,11 +238,16 @@ fn bench_itch_sized_throughput(c: &mut Criterion) {
     g.bench_function("5k_packets_x30_x38B", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
         let batch: Vec<Vec<u8>> = (0..msgs_per_packet).map(|_| vec![0xABu8; 38]).collect();
-        b.iter(|| {
-            for _ in 0..packets {
-                handle.send(batch.clone());
-            }
-            drain_data(&rx, total as usize);
+        b.iter_custom(|iters| {
+            let total_packets = packets * iters;
+            let total_msgs = (total * iters) as usize;
+            let h = handle.clone();
+            let batch = batch.clone();
+            timed_concurrent_drain(&rx, total_msgs, move || {
+                for _ in 0..total_packets {
+                    h.send(batch.clone());
+                }
+            })
         });
     });
     g.finish();
@@ -226,11 +263,15 @@ fn bench_large_messages(c: &mut Criterion) {
     g.bench_function("500_x_1KB_messages", |b| {
         let (rx, _req_tx, handle) = loopback_pair();
         let payload = vec![0xABu8; msg_size];
-        b.iter(|| {
-            for _ in 0..count {
-                handle.send(vec![payload.clone()]);
-            }
-            drain_data(&rx, count as usize);
+        b.iter_custom(|iters| {
+            let total_packets = count * iters;
+            let h = handle.clone();
+            let payload = payload.clone();
+            timed_concurrent_drain(&rx, total_packets as usize, move || {
+                for _ in 0..total_packets {
+                    h.send(vec![payload.clone()]);
+                }
+            })
         });
     });
     g.finish();
