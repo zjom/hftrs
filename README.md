@@ -8,16 +8,22 @@ book that you can query for top-of-book, spread, mid, and depth.
 The repo is a [Cargo workspace] of four crates — three reusable libraries
 and one binary that wires them together:
 
-| Crate                      | Role                                                                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [`moldudp`](./moldudp)     | MoldUDP64 client (gap detection + transparent retransmission) and a reference test server.                                            |
-| [`itch5`](./itch5)         | Zero-copy parser for all 23 ITCH 5.0 message types.                                                                                   |
-| [`orderbook`](./orderbook) | Per-symbol limit order book with arena-allocated, intrusively linked price levels.                                                    |
-| [`app`](./app)             | A binary that replays a recorded ITCH file over a real multicast group, runs the client against it, and prints top-of-book snapshots. |
+| Crate                      | Role                                                                                                                                                                                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`moldudp`](./moldudp)     | MoldUDP64 client (gap detection + transparent retransmission) and a reference test server.                                                                                                                                                    |
+| [`itch5`](./itch5)         | Zero-copy parser for all 23 ITCH 5.0 message types.                                                                                                                                                                                           |
+| [`orderbook`](./orderbook) | Per-symbol limit order book with arena-allocated, intrusively linked price levels.                                                                                                                                                            |
+| [`app`](./app)             | A binary that replays a recorded ITCH file over a real multicast group, runs the client against it, collects data into per symbol orderbooks and lets the user explore the symbol registry (via `--interactive`) or outputs a summary report. |
 
 Each subcrate has its own README with deeper rationale; this document gives
 the workspace-level picture and a sense of _why_ each piece looks the way it
 does.
+
+## Highlights
+
+### E2E App
+
+![gif showcasing order limit book in action](/assets/tui.gif)
 
 ## Why these three pieces
 
