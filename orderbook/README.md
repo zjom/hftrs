@@ -8,7 +8,7 @@ The book keeps three structures in sync:
 
 - **Two `BTreeMap<Price, Level>`**, one per side. Best bid is the rightmost key in `bids`, best ask is the leftmost key in `asks`. O(log n) on insert/remove, top-of-book is essentially free.
 - **`HashMap<OrderId, Index>`** for O(1) lookup from exchange order id to slab index — this is what cancel and execute messages address.
-- **`Pool` (slab arena)** of `Node { Order, prev, next }`. Orders live in the arena, not in individual `Box` allocations. The `prev`/`next` fields turn each price level into an *intrusive* doubly linked list, so unlinking a fully-filled or deleted order is two pointer writes — no scan, no hash lookup.
+- **`Pool` (slab arena)** of `Node { Order, prev, next }`. Orders live in the arena, not in individual `Box` allocations. The `prev`/`next` fields turn each price level into an _intrusive_ doubly linked list, so unlinking a fully-filled or deleted order is two pointer writes — no scan, no hash lookup.
 
 All ITCH event handlers (`add`, `execute`, `execute_at`, `cancel`, `delete`, `replace`) map onto these structures with no allocation in the steady state once the arena is warm.
 
@@ -45,14 +45,14 @@ assert_eq!(trade.qty, 30);
 
 `examples/replay_itch.rs` sketches how each ITCH message maps to a book operation:
 
-| ITCH message | Book method |
-|---|---|
-| `A`, `F` (Add Order) | `add` |
-| `E` (Order Executed) | `execute` |
+| ITCH message                    | Book method  |
+| ------------------------------- | ------------ |
+| `A`, `F` (Add Order)            | `add`        |
+| `E` (Order Executed)            | `execute`    |
 | `C` (Order Executed With Price) | `execute_at` |
-| `X` (Order Cancel) | `cancel` |
-| `D` (Order Delete) | `delete` |
-| `U` (Order Replace) | `replace` |
+| `X` (Order Cancel)              | `cancel`     |
+| `D` (Order Delete)              | `delete`     |
+| `U` (Order Replace)             | `replace`    |
 
 Trade-only messages (`P`), system events (`S`), and the various status messages don't touch the book.
 
@@ -65,7 +65,7 @@ cargo bench -p orderbook
 The suite ([`benches/book_bench.rs`](benches/book_bench.rs)) is divided into four groups:
 
 - **`orderbook/single_op_latency/{add,delete,execute_partial,
-  execute_full,cancel_partial,replace}`** — nanosecond-resolution
+execute_full,cancel_partial,replace}`** — nanosecond-resolution
   per-op latency against a pre-warmed 50k-order book. Uses
   `iter_custom` to amortize Criterion's per-iteration overhead across
   1000 ops per measurement window. This is the number that matters
@@ -76,13 +76,13 @@ The suite ([`benches/book_bench.rs`](benches/book_bench.rs)) is divided into fou
   cost is bounded by the BTreeMap traversal and doesn't grow
   linearly with order count.
 - **`orderbook/bulk/{fresh_inserts_10k,delete_then_readd_10k,
-  fragmented_refill_5k}`** — bulk workloads. The fragmented variant
+fragmented_refill_5k}`** — bulk workloads. The fragmented variant
   pre-deletes every other order before timing the refill so the slab
   free list is exercised under real churn rather than fresh growth.
 - **`orderbook/itch_replay/registry_replay_full_file`** — drives a
   registry of order books off the recorded ITCH sample
   (`../data/itch_1000_000` by default; override with
-  `ITCH5_BENCH_FILE=...`). Throughput is reported in *book events*
+  `ITCH5_BENCH_FILE=...`). Throughput is reported in _book events_
   (add + execute + cancel + delete + replace), not parsed messages,
   so the number isn't inflated by trades and status records.
 

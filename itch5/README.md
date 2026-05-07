@@ -13,7 +13,7 @@ Add the crate to your `Cargo.toml`:
 itch5 = "0.1"
 
 # Optional: enable chrono for `messages::Timestamp::to_naive_time` method
-# itch5 = {version = "0.1", features = ["chrono"]}  
+# itch5 = {version = "0.1", features = ["chrono"]}
 ```
 
 Implement [`MessageHandler`] for the message types you care about, then feed bytes to [`Parser`]:
@@ -92,42 +92,40 @@ pub enum ParseError {
 
 All 23 ITCH 5.0 message types are covered:
 
-| Tag | Struct | Description |
-|-----|--------|-------------|
-| `S` | `SystemEventMessage` | Market/session lifecycle events |
-| `R` | `StockDirectory` | Daily instrument reference data |
-| `H` | `StockTradingAction` | Trading halt and resume |
-| `Y` | `RegSHORestriction` | Regulation SHO short-sale restriction |
-| `L` | `MarketParticipantPosition` | Market maker status and mode |
-| `V` | `MWCBDeclineLevelMessage` | Market-wide circuit breaker levels |
-| `W` | `MWCBStatusMessage` | Market-wide circuit breaker status |
-| `K` | `QuotingPeriodUpdate` | IPO quotation release |
-| `J` | `LULDAuctionCollar` | Limit Up/Limit Down auction collar |
-| `h` | `OperationalHalt` | Exchange-specific operational halt |
-| `A` | `AddOrderNoMPIDAttribution` | New order (anonymous) |
-| `F` | `AddOrderWithMPIDAttribution` | New order (attributed) |
-| `E` | `OrderExecutedMessage` | Order execution |
-| `C` | `OrderExecutedWithPriceMessage` | Order execution at non-display price |
-| `X` | `OrderCancelMessage` | Partial order cancellation |
-| `D` | `OrderDeleteMessage` | Full order removal |
-| `U` | `OrderReplaceMessage` | Cancel-and-replace |
-| `P` | `TradeMessage` | Non-displayed trade |
-| `Q` | `CrossTradeMessage` | Opening/closing/halt cross execution |
-| `B` | `BrokenTradeMessage` | Trade break |
-| `I` | `NetOrderImbalanceIndicatorMessage` | Cross imbalance data |
-| `N` | `RetailPriceImprovementIndicator` | Retail interest flags |
-| `O` | `DirectListingwithCapitalRaisePriceDiscoveryMessage` | Direct listing price discovery |
-
+| Tag | Struct                                               | Description                           |
+| --- | ---------------------------------------------------- | ------------------------------------- |
+| `S` | `SystemEventMessage`                                 | Market/session lifecycle events       |
+| `R` | `StockDirectory`                                     | Daily instrument reference data       |
+| `H` | `StockTradingAction`                                 | Trading halt and resume               |
+| `Y` | `RegSHORestriction`                                  | Regulation SHO short-sale restriction |
+| `L` | `MarketParticipantPosition`                          | Market maker status and mode          |
+| `V` | `MWCBDeclineLevelMessage`                            | Market-wide circuit breaker levels    |
+| `W` | `MWCBStatusMessage`                                  | Market-wide circuit breaker status    |
+| `K` | `QuotingPeriodUpdate`                                | IPO quotation release                 |
+| `J` | `LULDAuctionCollar`                                  | Limit Up/Limit Down auction collar    |
+| `h` | `OperationalHalt`                                    | Exchange-specific operational halt    |
+| `A` | `AddOrderNoMPIDAttribution`                          | New order (anonymous)                 |
+| `F` | `AddOrderWithMPIDAttribution`                        | New order (attributed)                |
+| `E` | `OrderExecutedMessage`                               | Order execution                       |
+| `C` | `OrderExecutedWithPriceMessage`                      | Order execution at non-display price  |
+| `X` | `OrderCancelMessage`                                 | Partial order cancellation            |
+| `D` | `OrderDeleteMessage`                                 | Full order removal                    |
+| `U` | `OrderReplaceMessage`                                | Cancel-and-replace                    |
+| `P` | `TradeMessage`                                       | Non-displayed trade                   |
+| `Q` | `CrossTradeMessage`                                  | Opening/closing/halt cross execution  |
+| `B` | `BrokenTradeMessage`                                 | Trade break                           |
+| `I` | `NetOrderImbalanceIndicatorMessage`                  | Cross imbalance data                  |
+| `N` | `RetailPriceImprovementIndicator`                    | Retail interest flags                 |
+| `O` | `DirectListingwithCapitalRaisePriceDiscoveryMessage` | Direct listing price discovery        |
 
 ## Price Types
 
 Prices in the ITCH protocol are fixed-point integers. The crate provides two newtype wrappers:
 
-| Type   | Bytes | Precision        |
-|--------|-------|------------------|
+| Type     | Bytes | Precision        |
+| -------- | ----- | ---------------- |
 | `Price4` | 4     | 4 decimal places |
 | `Price8` | 8     | 8 decimal places |
-
 
 ## Symbol
 
@@ -144,7 +142,6 @@ let sym: Symbol = "MSFT".parse().unwrap();
 let key: u64 = sym.hash();
 let restored: Symbol = Symbol::from_hash(key);
 ```
-
 
 ## Timestamp
 
@@ -196,7 +193,7 @@ The suite ([`benches/itch_bench.rs`](benches/itch_bench.rs)) is structured aroun
   the tag byte. This is the floor: length-prefix decode and slice
   splits, no dispatch, no `cast`.
 - **`itch5/per_msg_type/{add_no_mpid,add_with_mpid,order_executed,
-  order_cancel,order_delete,order_replace,trade}`** — full
+order_cancel,order_delete,order_replace,trade}`** — full
   `parse_stream` over a homogeneous synthetic stream of each hot
   message type, dispatched into a no-op handler. Surfaces dispatch +
   cast cost per type so a regression in one is isolatable.
@@ -204,9 +201,9 @@ The suite ([`benches/itch_bench.rs`](benches/itch_bench.rs)) is structured aroun
   recorded sample replayed end-to-end. `noop` reports the parser's
   intrinsic ceiling; `counting` reports what an order-book consumer
   pays after touching every accessor on the hot message types.
-  Reported in messages/sec *and* bytes/sec.
+  Reported in messages/sec _and_ bytes/sec.
 - **`itch5/field_accessors/{price4_into_i64,timestamp_to_u64,
-  symbol_to_u64}`** — confirms each zero-copy big-endian accessor
+symbol_to_u64}`** — confirms each zero-copy big-endian accessor
   folds to a single load (or load + bswap) at release optimization.
 
 If the sample file is unavailable, the data-driven group prints a

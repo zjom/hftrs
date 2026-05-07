@@ -81,7 +81,7 @@ let (rx, req_tx) = MoldUDP64::builder()
 
 ### Receiving and inspecting packets
 
-Datagrams arrive on the channel in *receive order* — live and retransmitted
+Datagrams arrive on the channel in _receive order_ — live and retransmitted
 packets are interleaved. The consumer is responsible for reordering by
 `(session_ident, seq_num)`.
 
@@ -128,7 +128,7 @@ req_tx.try_send(RetransmissionRequest::new(rereq))?;
 
 ## Architecture
 
-`MoldUDP64::start` spawns `2 + N` threads (where *N* = number of re-request
+`MoldUDP64::start` spawns `2 + N` threads (where _N_ = number of re-request
 servers):
 
 ```
@@ -175,11 +175,11 @@ length-prefixed message blocks:
 
 Special `msg_count` values:
 
-| Value    | Meaning        | Notes                                         |
-|----------|----------------|-----------------------------------------------|
-| `0`      | Heartbeat      | Carries `seq_num` of next expected message    |
-| `0xFFFF` | End of session | Last chance to re-request; no new messages    |
-| other    | Standard       | Followed by that many message blocks          |
+| Value    | Meaning        | Notes                                      |
+| -------- | -------------- | ------------------------------------------ |
+| `0`      | Heartbeat      | Carries `seq_num` of next expected message |
+| `0xFFFF` | End of session | Last chance to re-request; no new messages |
+| other    | Standard       | Followed by that many message blocks       |
 
 ## Test server
 
@@ -225,7 +225,7 @@ the client into the parts an HFT consumer cares about separately:
 - **`moldudp/packet_parse/{1,10,100,1000}`** — the cost of parsing a
   packet header and iterating its messages, varying message density
   across four orders of magnitude. This is what the consumer pays
-  *per packet* once the bytes are in hand.
+  _per packet_ once the bytes are in hand.
 - **`moldudp/client_single_msg`** — worst-case shape: 1k packets each
   with one tiny message. All header overhead, no batching.
 - **`moldudp/client_batched`** — 1k packets × 10 small messages.
@@ -242,7 +242,7 @@ the client into the parts an HFT consumer cares about separately:
 
 The throughput numbers are bounded by per-syscall UDP cost on
 loopback — they do not characterise a real NIC or a kernel-bypass
-deployment, and they are *not* a substitute for measuring against a
+deployment, and they are _not_ a substitute for measuring against a
 production multicast feed.
 
 ## Roadmap

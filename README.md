@@ -8,15 +8,15 @@ book that you can query for top-of-book, spread, mid, and depth.
 The repo is a [Cargo workspace] of four crates — three reusable libraries
 and one binary that wires them together:
 
-| Crate | Role |
-|---|---|
-| [`moldudp`](./moldudp) | MoldUDP64 client (gap detection + transparent retransmission) and a reference test server. |
-| [`itch5`](./itch5) | Zero-copy parser for all 23 ITCH 5.0 message types. |
-| [`orderbook`](./orderbook) | Per-symbol limit order book with arena-allocated, intrusively linked price levels. |
-| [`app`](./app) | A binary that replays a recorded ITCH file over a real multicast group, runs the client against it, and prints top-of-book snapshots. |
+| Crate                      | Role                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [`moldudp`](./moldudp)     | MoldUDP64 client (gap detection + transparent retransmission) and a reference test server.                                            |
+| [`itch5`](./itch5)         | Zero-copy parser for all 23 ITCH 5.0 message types.                                                                                   |
+| [`orderbook`](./orderbook) | Per-symbol limit order book with arena-allocated, intrusively linked price levels.                                                    |
+| [`app`](./app)             | A binary that replays a recorded ITCH file over a real multicast group, runs the client against it, and prints top-of-book snapshots. |
 
 Each subcrate has its own README with deeper rationale; this document gives
-the workspace-level picture and a sense of *why* each piece looks the way it
+the workspace-level picture and a sense of _why_ each piece looks the way it
 does.
 
 ## Why these three pieces
@@ -102,7 +102,7 @@ events/second, you will eventually meet a slow path you didn't budget for.
 
 Inside the order book, every price level is a doubly-linked list of orders
 in time-priority order. The `prev`/`next` pointers (slab indices, actually
-— see below) live *inside* each `Node` rather than in a separate
+— see below) live _inside_ each `Node` rather than in a separate
 `LinkedList` allocation. Cancelling or fully-executing an order is two
 pointer writes (splice out of the list) plus a free-list push. No
 scanning, no hash lookup at a price level, and the level header
@@ -138,7 +138,7 @@ no-op method per message type. You implement only the handlers you care
 about; the parser dispatches statically and inlines through the trait
 methods at release optimization. Returning `ControlFlow::Break(())` from
 any handler stops the parse early, which makes the same API usable for
-"count every trade in this file" *and* "stream forever from a socket and
+"count every trade in this file" _and_ "stream forever from a socket and
 fill an order book". No closures, no boxed callbacks.
 
 ### Realistic transport reliability
@@ -157,10 +157,10 @@ of this:
   that compete on a shared MPMC channel — slow servers are bypassed
   automatically by faster ones, no head-of-line blocking, no per-server
   coordination.
-- A re-request *receive* thread that merges retransmitted packets into
+- A re-request _receive_ thread that merges retransmitted packets into
   the same data channel as live packets.
 
-Live and retransmitted packets land in *receive order* on the consumer
+Live and retransmitted packets land in _receive order_ on the consumer
 channel, not in sequence order. The consumer is the one with semantic
 context (symbol state, partial fills) and is in the best position to
 reorder, so the library refuses to make that decision on its behalf.
@@ -177,7 +177,7 @@ these counters at the end of a run, which makes regressions in the
 parser/book interaction easy to catch when re-running against the same
 recorded file.
 
-## Things explicitly *not* in this repo
+## Things explicitly _not_ in this repo
 
 These would all be reasonable next steps. They're called out because
 omitting them was a choice, not an oversight:
@@ -207,11 +207,11 @@ The benchmarks are split into four suites, each layered on the next:
 
 ### Component microbenchmarks
 
-| Suite | What it measures |
-|---|---|
-| `cargo bench -p itch5` | wire-format framing in isolation; per-message-type dispatch (`A`/`F`/`E`/`X`/`D`/`U`/`P`); a no-op-handler floor and a counting-handler ceiling against a 1M-message recorded sample; zero-copy field accessor cost (`Price4`, `Timestamp`, `Symbol`). |
+| Suite                      | What it measures                                                                                                                                                                                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cargo bench -p itch5`     | wire-format framing in isolation; per-message-type dispatch (`A`/`F`/`E`/`X`/`D`/`U`/`P`); a no-op-handler floor and a counting-handler ceiling against a 1M-message recorded sample; zero-copy field accessor cost (`Price4`, `Timestamp`, `Symbol`).                                             |
 | `cargo bench -p orderbook` | nanosecond-resolution single-op latency for `add` / `delete` / `cancel` / `execute_partial` / `execute_full` / `replace` against a steady-state book; top-of-book and depth(10) queries scaled across book sizes 1k → 1M; bulk inserts; fragmented arena refills that exercise the slab free list. |
-| `cargo bench -p moldudp` | packet header decode and message-iter cost varying message density (1 / 10 / 100 / 1000 per packet); end-to-end client receive throughput for several traffic shapes including ITCH-sized (38 B) batched packets; gap detection + retransmission round-trip. |
+| `cargo bench -p moldudp`   | packet header decode and message-iter cost varying message density (1 / 10 / 100 / 1000 per packet); end-to-end client receive throughput for several traffic shapes including ITCH-sized (38 B) batched packets; gap detection + retransmission round-trip.                                       |
 
 ### Integrated pipeline
 
@@ -257,7 +257,7 @@ host the benchmark ran on.
 ### Caveats
 
 These benchmarks measure the system on the host they ran on. They do
-*not* characterise:
+_not_ characterise:
 
 - Production NIC behavior — there is no kernel-bypass path here, so
   the end-to-end suite is bounded by per-syscall UDP cost on
