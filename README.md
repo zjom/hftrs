@@ -285,10 +285,20 @@ something with that context.
 
 ## Building and running
 
-The workspace builds on stable Rust (edition 2024). To replay a recorded
-ITCH file end-to-end through the local multicast loopback:
+The workspace builds on stable Rust (edition 2024). 
+
+To replay a recorded ITCH file end-to-end through the local multicast loopback:
 
 ```sh
+# in interactive mode
+cargo run --release -p app -- \
+  --file /path/to/01302019.NASDAQ_ITCH50 \
+  --interactive
+```
+
+
+```sh
+# to generate a report containing AAPL and MSFT info only 
 cargo run --release -p app -- \
   --file /path/to/01302019.NASDAQ_ITCH50 \
   --watch AAPL --watch MSFT \
