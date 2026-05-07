@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fmt::Display};
 
 /// Errors that can be returned when parsing MoldUDP64 packets.
 #[derive(Debug)]
@@ -24,3 +24,59 @@ impl std::fmt::Display for MoldUdpError {
 }
 
 impl Error for MoldUdpError {}
+
+/// Errors that can be returned when intialising a socket.
+#[derive(Debug)]
+pub(crate) enum SocketInitError {
+    /// `setsockopt` syscall to set `SO_RCVBUF` failed.
+    SetRcvBufSizeError {
+        error: std::io::Error,
+        socket_label: &'static str,
+        desired_size: usize,
+    },
+
+    /// The kernel clamped `SO_RCVBUF` to `net.core.rmem_max` (often 208 KiB by default).
+    KernelClamp {
+        socket_label: &'static str,
+        desired_size: usize,
+    },
+
+    /// `getsockopt` syscall to get `SO_RCVBUF` failed.
+    /// Unable to verify actual `SO_RCVBUF` size.
+    /// Packets may be truncated silently.
+    GetRcvBufSizeError {
+        error: std::io::Error,
+        socket_label: &'static str,
+    },
+}
+
+impl Display for SocketInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SetRcvBufSizeError {
+                error,
+                socket_label,
+                desired_size,
+            } => writeln!(
+                f,
+                "failed to set `SO_RCVBUF` to {desired_size} for {socket_label} due to {error}"
+            ),
+            Self::KernelClamp {
+                socket_label,
+                desired_size,
+            } => writeln!(
+                f,
+                "failed to set `SO_RCVBUF` for {socket_label} due to kernel clamp; on Linux raise net.core.rmem_max with `sudo sysctl -w net.core.rmem_max={desired_size}`"
+            ),
+            Self::GetRcvBufSizeError {
+                error,
+                socket_label,
+            } => writeln!(
+                f,
+                "failed to verify `SO_RCVBUF` for {socket_label} due to {error}. packets may be silently dropped"
+            ),
+        }
+    }
+}
+
+impl Error for SocketInitError {}

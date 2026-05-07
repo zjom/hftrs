@@ -1,5 +1,6 @@
 use crossbeam::channel::{self, Receiver, Sender};
 use crossbeam::queue::ArrayQueue;
+use socket2::SockRef;
 use std::ops::Deref;
 use std::{
     io,
@@ -10,6 +11,7 @@ use std::{
 use tracing::{debug, error, info, info_span, trace, warn};
 use zerocopy::{FromBytes, IntoBytes};
 
+use crate::errors::SocketInitError;
 use crate::packet::{Packet, PacketHeader};
 use crate::util::pad_session;
 use bon::Builder;
@@ -158,6 +160,11 @@ impl MoldUDP64 {
             buf_size = BUF_SIZE,
             "starting MoldUDP64 client"
         );
+
+        tune_recv_buffer(&downstream, "downstream")
+            .expect("User should raise `net.core.rmem_max` prior to using this library.");
+        tune_recv_buffer(&rereq, "rereq")
+            .expect("User should raise `net.core.rmem_max` prior to using this library.");
 
         // --- Buffer pool ---
         let pool: Pool = Arc::new(ArrayQueue::new(POOL_SIZE));
@@ -487,6 +494,47 @@ pub(crate) fn forward(
 /// here for headroom against any future framing quirks.
 pub(crate) const BUF_SIZE: usize = 524_288;
 const POOL_SIZE: usize = 1024;
+
+/// Target kernel UDP receive buffer for both client sockets.
+///
+/// A real ITCH-shaped feed bursts thousands of ~1.2 KiB packets faster than
+/// any single-thread reader can drain them. The default per-socket recv
+/// buffer (Linux: ~208 KiB, only ~170 packets) overflows immediately and the
+/// kernel silently drops the rest. 8 MiB holds ~7 k typical packets, which
+/// covers any realistic burst between drains.
+///
+/// On Linux the kernel clamps `SO_RCVBUF` to `net.core.rmem_max` (often
+/// 208 KiB by default). To get the full headroom raise it once per host:
+///
+/// ```sh
+/// sudo sysctl -w net.core.rmem_max=8388608
+/// ```
+const RECV_BUF_SIZE: usize = 8 * 1024 * 1024;
+
+fn tune_recv_buffer(socket: &UdpSocket, label: &'static str) -> Result<(), SocketInitError> {
+    let sock = SockRef::from(socket);
+    if let Err(error) = sock.set_recv_buffer_size(RECV_BUF_SIZE) {
+        return Err(SocketInitError::SetRcvBufSizeError {
+            error,
+            socket_label: label,
+            desired_size: RECV_BUF_SIZE,
+        });
+    }
+    // The kernel reports back twice the requested size (it accounts for
+    // bookkeeping). Anything substantially below `RECV_BUF_SIZE` indicates a
+    // host-level clamp the operator needs to address.
+    match sock.recv_buffer_size() {
+        Ok(actual) if actual < RECV_BUF_SIZE => Err(SocketInitError::KernelClamp {
+            socket_label: label,
+            desired_size: RECV_BUF_SIZE,
+        }),
+        Ok(_) => Ok(()),
+        Err(error) => Err(SocketInitError::GetRcvBufSizeError {
+            error,
+            socket_label: label,
+        }),
+    }
+}
 
 pub(crate) type Buffer = Box<[u8]>;
 pub(crate) type Pool = Arc<ArrayQueue<Buffer>>;
