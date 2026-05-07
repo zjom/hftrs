@@ -215,7 +215,7 @@ impl LadderSide {
             alignment: Alignment::Right,
             borders: Borders::TOP | Borders::RIGHT,
             flex: Flex::End,
-            columns: [("share", 8), ("qty", 12), ("price", 12)],
+            columns: [("share", 12), ("qty", 12), ("price", 12)],
             dim: (20, 60, 20),
             peak: (140, 255, 140),
         }
@@ -229,7 +229,7 @@ impl LadderSide {
             alignment: Alignment::Left,
             borders: Borders::TOP,
             flex: Flex::Start,
-            columns: [("price", 12), ("qty", 12), ("share", 8)],
+            columns: [("price", 12), ("qty", 12), ("share", 12)],
             dim: (60, 20, 20),
             peak: (255, 140, 140),
         }
