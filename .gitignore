@@ -19,3 +19,6 @@ data/
 
 # samply artifact
 profile.json.gz
+
+# custom rust analyzer x nvim per project override
+.rust-analyzer.json
